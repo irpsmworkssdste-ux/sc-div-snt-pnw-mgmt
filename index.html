@@ -14,6 +14,7 @@
     .tab-button { padding: 6px 14px; background: #e0e0e0; border: 1px solid #ccc; border-bottom: none; border-radius: 4px 4px 0 0; cursor: pointer; font-weight: bold; font-size: 11px; color: #555; transition: all 0.2s; }
     .tab-button:hover { background: #d5d5d5; }
     .tab-button.active { background: #4285F4; color: white; border-color: #4285F4; }
+    .tab-summary { background: #fbbc05; color: #333; }
 
     .table-wrapper { width: 100%; overflow-x: auto; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-radius: 6px; flex: 1;}
     table { border-collapse: collapse; width: max-content; min-width: 100%; }
@@ -34,6 +35,7 @@
     .top-btn { padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; font-size: 12px; }
     .btn-admin { background: #333; color: white; }
     .btn-add { background: #4285F4; color: white; }
+    .btn-export { background: #107c41; color: white; margin-right: 5px; }
     .btn-save { background: #34A853; color: white; animation: pulse 2s infinite;}
 
     @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(52, 168, 83, 0.7); } 70% { box-shadow: 0 0 0 6px rgba(52, 168, 83, 0); } 100% { box-shadow: 0 0 0 0 rgba(52, 168, 83, 0); } }
@@ -48,6 +50,10 @@
     .page-btn:hover { background: #ccc; }
     .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .footer-credit { text-align: right; margin-top: auto; padding: 15px 5px 5px 0; font-size: 12px; color: #444; font-weight: bold; font-style: italic; border-top: 1px solid #ddd; }
+
+    .search-box { display: flex; gap: 4px; align-items: center;}
+    .search-input { padding: 6px; border: 1px solid #ccc; border-radius: 4px; width: 200px; font-size:12px;}
+    .search-btn { padding: 6px 10px; background: #4285F4; color: white; border: none; border-radius: 4px; cursor: pointer;}
   </style>
 </head>
 <body>
@@ -56,11 +62,18 @@
     <div>
       <h2>SC Division S&T proposals and works management portal <span id="syncStatus" class="status-text"></span></h2>
     </div>
+    
+    <div class="search-box">
+      <input type="text" id="searchInput" class="search-input" placeholder="Search across all works...">
+      <button class="search-btn" onclick="executeSearch()">🔍 Search</button>
+    </div>
+
     <div style="display: flex; gap: 8px;">
+      <button id="exportBtn" class="top-btn btn-export" onclick="exportToCSV()">📊 Export CSV</button>
       <button id="loginBtn" class="top-btn btn-admin" onclick="toggleLogin()">🔒 Admin Login</button>
       <span id="adminControls" style="display:none; gap: 8px;">
         <button id="saveBatchBtn" class="top-btn btn-save" style="display:none;" onclick="commitBatchedChanges()">💾 Save Changes (0)</button>
-        <button class="top-btn btn-add" onclick="addRow()">➕ Add Row</button>
+        <button id="addBtn" class="top-btn btn-add" onclick="addRow()">➕ Add Row</button>
       </span>
     </div>
   </div>
@@ -69,43 +82,15 @@
 
   <div class="table-wrapper">
     <table id="mainTable">
-      <thead>
-        <tr>
-          <th>Sl. No</th>
-          <th style="width: 220px;">Name of the Work</th>
-          <th>Status</th>
-          <th>AE Submission & Estimates</th>
-          <th>DE Submission & Estimates</th>
-          <th>Schedule Submission & Estimates</th>
-          <th>IRPSM NO.</th>
-          <th>Sanctioned Amt (Sign/Tele)</th>
-          <th>RCIL Provision</th>
-          <th>ENGG Provision</th>
-          <th>ELEC /M Provision</th>
-          <th>ELEC /TRD Provision</th>
-          <th>Schedule Amount</th>
-          <th>Contingency</th>
-          <th>D&G Prov. / Status</th>
-          <th>Tender Awarded Value</th>
-          <th>Tenders Position (Sign/Tele)</th>
-          <th>Combined Stores Position</th>
-          <th>GeM Prov. (Veh/Manpower)</th>
-          <th>Allocation</th>
-          <th>A/c s Reference</th>
-          <th>Sanction No & Date</th>
-          <th>Physical Condition (% / Status)</th>
-          <th>Finance Status</th>
-          <th>Work Status</th>
-          <th>Remarks</th>
-        </tr>
-      </thead>
+      <thead id="tableHead">
+        </thead>
       <tbody id="tableBody">
         <tr><td colspan="26">Loading database matrix... please wait.</td></tr>
       </tbody>
     </table>
   </div>
 
-  <div class="pagination">
+  <div class="pagination" id="paginationBar">
     <button class="page-btn" id="prevBtn" onclick="changePage(-1)">◀ Previous</button>
     <span id="pageInfo">Page 1 of 1</span>
     <button class="page-btn" id="nextBtn" onclick="changePage(1)">Next ▶</button>
@@ -116,10 +101,14 @@
 
   <script>
     // --- CONNECT FRONTEND TO APPS SCRIPT API ---
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyVkoQfOEj98QVrEkKomhZZkrWw4eciVvqRRhl3nNCwCSIqe_8SdfP9kW9VmwrXOorX/exec";
+    const WEB_APP_URL = "https://script.google.com/macros/library/d/1wNCwQzfUjSeMzASE0ySYtNEgXkt_RjChQaDpzPJkgWIoiMEFedHbo4Il/2";
 
-    const tabsList = ["1500", "1600", "1700", "2900", "3300", "3000", "3100", "3200", "4200", "5300", "6400", "Deposit work", "Other works"];
+    const tabsList = ["Summary", "1500", "1600", "1700", "2900", "3300", "3000", "3100", "3200", "4200", "5300", "6400", "Deposit work", "Other works"];
     let currentTab = tabsList[0];
+    let isSearchMode = false;
+
+    // We must define DB_HEADERS here for the Excel Export to map perfectly
+    const DB_HEADERS = ['S.No', 'Name of the Work', 'Status', 'AE Date', 'AE Cost Signal', 'AE Cost Tele', 'AE File Signal', 'AE File Tele', 'DE Date', 'DE Cost Signal', 'DE Cost Tele', 'DE File Signal', 'DE File Tele', 'Schedule Date', 'Schedule Cost Signal', 'Schedule Cost Tele', 'Schedule File Signal', 'Schedule File Tele', 'IRPSM NO', 'Sanctioned Amount Signal', 'Sanctioned Amount Tele', 'RCIL Provision', 'ENGG Provision', 'ELEC M Provision', 'ELEC TRD Provision', 'Schedule Amount', 'Contingency', 'DG Provision Status', 'Tender Awarded Value', 'Tenders Position Signal', 'Tenders Position Tele', 'Combined Stores Position Status', 'GeM Provision Status', 'Allocation', 'Acs Reference', 'Sanction No', 'Sanction Date', 'Physical Condition Percent', 'Physical Condition Status', 'Finance Status', 'Work Status', 'Remarks'];
 
     let clientTabCache = {}; 
     let tableData = []; 
@@ -140,23 +129,25 @@
       container.innerHTML = '';
       tabsList.forEach(tab => {
         let btn = document.createElement('button');
-        btn.className = `tab-button ${tab === currentTab ? 'active' : ''}`;
+        btn.className = `tab-button ${tab === 'Summary' ? 'tab-summary' : ''} ${tab === currentTab && !isSearchMode ? 'active' : ''}`;
         btn.innerText = tab;
         btn.onclick = () => switchTab(tab);
         container.appendChild(btn);
       });
-    }
-
-    function invalidateLocalCache(tabName) {
-      for (let key in clientTabCache) {
-        if (key.startsWith(tabName + '_')) delete clientTabCache[key];
+      if (isSearchMode) {
+        let btn = document.createElement('button');
+        btn.className = 'tab-button active';
+        btn.innerText = '🔍 Search Results';
+        container.appendChild(btn);
       }
     }
 
     function switchTab(tabName) {
-      if(currentTab === tabName) return;
+      if(currentTab === tabName && !isSearchMode) return;
       if (Object.keys(modifiedRows).length > 0 && !confirm("You have unsaved changes! Discard them and switch tabs?")) return;
+      isSearchMode = false;
       currentTab = tabName;
+      document.getElementById('searchInput').value = '';
       buildTabsUI();
       loadPage(1);
     }
@@ -192,6 +183,127 @@
 
     function setStatus(msg) { document.getElementById('syncStatus').innerText = msg; }
 
+    // --- NEW: SUMMARY PORTAL LOGIC ---
+    function renderSummaryDashboard(data) {
+      document.getElementById('paginationBar').style.display = 'none';
+      document.getElementById('exportBtn').style.display = 'none';
+      if(isAdmin) document.getElementById('addBtn').style.display = 'none';
+
+      const thead = document.getElementById('tableHead');
+      thead.innerHTML = `<tr><th>Category / Allocation Tab</th><th>Total Active Works (Rows)</th><th>Action</th></tr>`;
+      
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+      let total = 0;
+
+      data.forEach(item => {
+        total += item.count;
+        tbody.innerHTML += `<tr>
+          <td style="font-weight:bold; font-size:13px;">${item.tabName}</td>
+          <td style="font-size:13px;">${item.count}</td>
+          <td><button class="top-btn btn-add" onclick="switchTab('${item.tabName}')">Open Dashboard ➔</button></td>
+        </tr>`;
+      });
+      tbody.innerHTML += `<tr style="background:#e0e0e0; font-weight:bold;"><td style="font-size:14px;">TOTAL ALL WORKS</td><td style="font-size:14px;">${total}</td><td></td></tr>`;
+    }
+
+    function renderStandardHeaders() {
+      document.getElementById('paginationBar').style.display = isSearchMode ? 'none' : 'flex';
+      document.getElementById('exportBtn').style.display = 'inline-block';
+      if(isAdmin) document.getElementById('addBtn').style.display = 'inline-block';
+
+      const thead = document.getElementById('tableHead');
+      thead.innerHTML = `<tr>
+          <th>Sl. No</th>
+          <th style="width: 220px;">Name of the Work</th>
+          <th>Status</th>
+          <th>AE Submission & Estimates</th>
+          <th>DE Submission & Estimates</th>
+          <th>Schedule Submission & Estimates</th>
+          <th>IRPSM NO.</th>
+          <th>Sanctioned Amt (Sign/Tele)</th>
+          <th>RCIL Provision</th>
+          <th>ENGG Provision</th>
+          <th>ELEC /M Provision</th>
+          <th>ELEC /TRD Provision</th>
+          <th>Schedule Amount</th>
+          <th>Contingency</th>
+          <th>D&G Prov. / Status</th>
+          <th>Tender Awarded Value</th>
+          <th>Tenders Position (Sign/Tele)</th>
+          <th>Combined Stores Position</th>
+          <th>GeM Prov. (Veh/Manpower)</th>
+          <th>Allocation</th>
+          <th>A/c s Reference</th>
+          <th>Sanction No & Date</th>
+          <th>Physical Condition (% / Status)</th>
+          <th>Finance Status</th>
+          <th>Work Status</th>
+          <th>Remarks</th>
+        </tr>`;
+    }
+
+    // --- NEW: GLOBAL SEARCH LOGIC ---
+    function executeSearch() {
+      const query = document.getElementById('searchInput').value.trim();
+      if(!query) return;
+      if (Object.keys(modifiedRows).length > 0 && !confirm("Discard unsaved changes?")) return;
+      
+      isSearchMode = true;
+      buildTabsUI();
+      setStatus('Searching Database...');
+      
+      fetch(`${WEB_APP_URL}?action=search&query=${encodeURIComponent(query)}`)
+        .then(res => res.json())
+        .then(data => {
+          tableData = data;
+          totalRowsCount = data.length;
+          renderStandardHeaders();
+          rebuildTable(true); // true = forces read-only mode so users don't break cross-tab data
+          setStatus(`Found ${data.length} matches`);
+        });
+    }
+
+    // --- NEW: EXPORT TO CSV / EXCEL ---
+    function exportToCSV() {
+      if(currentTab === 'Summary') return;
+      setStatus('Preparing Excel Data...');
+      
+      let targetUrl = isSearchMode ? false : `${WEB_APP_URL}?action=getAllData&tabName=${encodeURIComponent(currentTab)}`;
+      
+      // If we are in standard mode, fetch all rows. If in search mode, just export the tableData array.
+      if (targetUrl) {
+        fetch(targetUrl).then(res => res.json()).then(data => generateCSV(data, currentTab));
+      } else {
+        generateCSV(tableData, 'Search_Results');
+      }
+    }
+
+    function generateCSV(data, filenamePrefix) {
+      let csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += DB_HEADERS.join(",") + "\r\n"; // Header Row
+
+      data.forEach((row, idx) => {
+        let rowArr = [idx + 1]; // S.No
+        for(let i=1; i<DB_HEADERS.length; i++){
+          let val = row[DB_HEADERS[i]] || '';
+          val = val.toString().replace(/"/g, '""'); // Escape internal quotes for Excel
+          csvContent += `"${val}",`;
+        }
+        csvContent += "\r\n";
+      });
+
+      var encodedUri = encodeURI(csvContent);
+      var link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `${filenamePrefix}_Export.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setStatus('✔ Export Complete'); setTimeout(() => setStatus(''), 2000);
+    }
+
+    // --- CORE BATCHING & SAVING LOGIC ---
     function markRowModified(localIndex) {
       const row = tableData[localIndex];
       modifiedRows[row._absoluteIndex] = row; 
@@ -226,10 +338,24 @@
         });
     }
 
+    function invalidateLocalCache(tabName) {
+      for (let key in clientTabCache) { if (key.startsWith(tabName + '_')) delete clientTabCache[key]; }
+    }
+
     function loadPage(page, forceRefetch = false) {
+      if (isSearchMode) return; // Disable pagination during search
       if (Object.keys(modifiedRows).length > 0 && !forceRefetch && !confirm("You have unsaved changes! Discard them to change pages?")) return;
+      
       modifiedRows = {}; updateSaveUI();
       currentPage = page;
+
+      if (currentTab === 'Summary') {
+        setStatus('Fetching Dashboard...');
+        fetch(`${WEB_APP_URL}?action=getSummary`).then(res => res.json()).then(data => { renderSummaryDashboard(data); setStatus(''); });
+        return;
+      }
+
+      renderStandardHeaders();
       const cacheKey = currentTab + '_P' + page;
 
       if (!forceRefetch && clientTabCache[cacheKey]) {
@@ -252,13 +378,10 @@
     function changePage(dir) { loadPage(currentPage + dir); }
 
     function addRow() {
-      if (!isAdmin) return;
+      if (!isAdmin || currentTab === 'Summary' || isSearchMode) return;
       setStatus('Adding row...');
-      fetch(WEB_APP_URL, {
-        method: "POST",
-        body: JSON.stringify({ action: "addRow", tabName: currentTab, password: currentPassword })
-      }).then(res => res.json())
-        .then(response => {
+      fetch(WEB_APP_URL, { method: "POST", body: JSON.stringify({ action: "addRow", tabName: currentTab, password: currentPassword }) })
+        .then(res => res.json()).then(response => {
           if (response.success) {
             totalRowsCount = response.newTotalRows; invalidateLocalCache(currentTab);
             loadPage(Math.ceil(totalRowsCount / ROWS_PER_PAGE) || 1, true);
@@ -268,26 +391,35 @@
     }
     
     window.removeRow = function(absoluteIndex) {
-      if (!isAdmin) return;
+      if (!isAdmin || isSearchMode) return;
       if (confirm(`PERMANENTLY DELETE Row ${absoluteIndex + 1} from Tab ${currentTab}?`)) {
         setStatus('Deleting Row...');
-        fetch(WEB_APP_URL, {
-          method: "POST",
-          body: JSON.stringify({ action: "deleteRow", tabName: currentTab, password: currentPassword, rowIndex: absoluteIndex })
-        }).then(res => res.json())
-          .then(response => {
+        fetch(WEB_APP_URL, { method: "POST", body: JSON.stringify({ action: "deleteRow", tabName: currentTab, password: currentPassword, rowIndex: absoluteIndex }) })
+          .then(res => res.json()).then(response => {
             if (response.success) { invalidateLocalCache(currentTab); loadPage(currentPage, true); setStatus('✔ Row Deleted'); setTimeout(() => setStatus(''), 2000); } 
             else { alert("Error: " + response.error); setStatus(''); }
           });
       }
     };
 
-    function createCompoundCell(row, localIndex, prefix) {
+    // --- BUG FIX INSTALLED IN DELETE FILE LOGIC ---
+    window.deleteFileLink = function(localIndex, key) {
+      if(!isAdmin || isSearchMode) return;
+      if(confirm(`Remove this file link permanently?`)) { 
+        delete tableData[localIndex][key]; 
+        markRowModified(localIndex); 
+        commitBatchedChanges(); // Auto-commits instantly to prevent ghost links upon logout
+        rebuildTable(); 
+      }
+    }
+
+    // --- UI RENDERING ENGINES ---
+    function createCompoundCell(row, localIndex, prefix, readOnly) {
       let td = document.createElement('td');
       let container = document.createElement('div'); container.className = 'compound-cell';
       let dateInput = document.createElement('input'); dateInput.type = 'date';
       if(row[prefix + ' Date']) dateInput.value = new Date(row[prefix + ' Date']).toISOString().substring(0, 10);
-      dateInput.disabled = !isAdmin;
+      dateInput.disabled = !isAdmin || readOnly;
       dateInput.onchange = (e) => { tableData[localIndex][prefix + ' Date'] = e.target.value; markRowModified(localIndex); };
       container.appendChild(dateInput);
 
@@ -295,7 +427,7 @@
         let div = document.createElement('div'); div.className = 'compound-row';
         div.innerHTML = `<span>Cost ${type.substring(0,4)}:</span>`;
         let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.placeholder = 'Amt...';
-        inp.value = row[prefix + ' Cost ' + type] || ''; inp.disabled = !isAdmin;
+        inp.value = row[prefix + ' Cost ' + type] || ''; inp.disabled = !isAdmin || readOnly;
         inp.onchange = (e) => { tableData[localIndex][prefix + ' Cost ' + type] = e.target.value; markRowModified(localIndex); };
         div.appendChild(inp); container.appendChild(div);
       });
@@ -308,113 +440,114 @@
         let fileKey = prefix + ' File ' + type;
         if (row[fileKey]) {
           fileBtnGroup.innerHTML += `<button class="icon-btn" onclick="window.open('${row[fileKey]}', '_blank')" title="Download">📥${type.substring(0,1)}</button>`;
-          if(isAdmin) {
+          if(isAdmin && !readOnly) {
             fileBtnGroup.innerHTML += `<button class="icon-btn" onclick="triggerFilePicker(${localIndex}, '${fileKey}')" title="Replace">🔄</button>`;
             fileBtnGroup.innerHTML += `<button class="icon-btn" onclick="deleteFileLink(${localIndex}, '${fileKey}')" title="Delete">❌</button>`;
           }
-        } else if (isAdmin) {
+        } else if (isAdmin && !readOnly) {
           fileBtnGroup.innerHTML += `<button class="icon-btn" onclick="triggerFilePicker(${localIndex}, '${fileKey}')" title="Upload">📤${type.substring(0,1)}</button>`;
         } else { fileBtnGroup.innerHTML += `<span style="color:#ccc;margin-right:4px;">➖</span>`; }
       });
       container.appendChild(fileRow); td.appendChild(container); return td;
     }
 
-    window.deleteFileLink = function(localIndex, key) {
-      if(!isAdmin) return;
-      if(confirm(`Remove this file link?`)) { delete tableData[localIndex][key]; markRowModified(localIndex); rebuildTable(); }
-    }
-
     window.triggerFilePicker = function(localIndex, fileKey) {
-      if (!isAdmin) return; 
+      if (!isAdmin || isSearchMode) return; 
       currentUploadMeta = { index: localIndex, key: fileKey };
       const fileInput = document.getElementById('globalFileInput');
       fileInput.value = ''; fileInput.click();
     };
 
-    function createStandardCell(row, localIndex, key, className, placeholder) {
+    function createStandardCell(row, localIndex, key, className, placeholder, readOnly) {
       let td = document.createElement('td');
       let inp = document.createElement('input'); inp.type = 'text'; inp.className = className; inp.placeholder = placeholder;
-      inp.value = row[key] || ''; inp.disabled = !isAdmin;
+      inp.value = row[key] || ''; inp.disabled = !isAdmin || readOnly;
       inp.onchange = (e) => { tableData[localIndex][key] = e.target.value; markRowModified(localIndex); };
       td.appendChild(inp); return td;
     }
 
-    function rebuildTable() {
+    function rebuildTable(readOnly = false) {
       const tbody = document.getElementById('tableBody'); tbody.innerHTML = ''; 
       if (tableData.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="26" style="color:#999;padding:20px;">No records found in Tab [${currentTab}]. Click Add Row to get started.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="26" style="color:#999;padding:20px;">No records found.</td></tr>`;
         return;
       }
       tableData.forEach((row, localIndex) => {
         let absIndex = row._absoluteIndex; const tr = document.createElement('tr');
         let tdSno = document.createElement('td');
-        if (isAdmin) { tdSno.innerHTML = `<div class="sno-cell"><span>${absIndex + 1}</span><button class="icon-btn" onclick="removeRow(${absIndex})" title="Delete Row">🗑️</button></div>`; } 
-        else { tdSno.innerText = absIndex + 1; }
+        
+        let label = readOnly ? `[${row._tabName}]<br>#${absIndex + 1}` : (absIndex + 1);
+
+        if (isAdmin && !readOnly) { tdSno.innerHTML = `<div class="sno-cell"><span>${label}</span><button class="icon-btn" onclick="removeRow(${absIndex})" title="Delete Row">🗑️</button></div>`; } 
+        else { tdSno.innerHTML = label; }
         tr.appendChild(tdSno);
 
-        tr.appendChild(createStandardCell(row, localIndex, 'Name of the Work', 'txt-work', 'Describe details...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'Status', 'txt-short', 'Status...'));
-        tr.appendChild(createCompoundCell(row, localIndex, 'AE'));
-        tr.appendChild(createCompoundCell(row, localIndex, 'DE'));
-        tr.appendChild(createCompoundCell(row, localIndex, 'Schedule'));
-        tr.appendChild(createStandardCell(row, localIndex, 'IRPSM NO', 'txt-short', 'IRPSM...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'Name of the Work', 'txt-work', 'Describe details...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'Status', 'txt-short', 'Status...', readOnly));
+        tr.appendChild(createCompoundCell(row, localIndex, 'AE', readOnly));
+        tr.appendChild(createCompoundCell(row, localIndex, 'DE', readOnly));
+        tr.appendChild(createCompoundCell(row, localIndex, 'Schedule', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'IRPSM NO', 'txt-short', 'IRPSM...', readOnly));
         
         let tdSanc = document.createElement('td'); let divSanc = document.createElement('div'); divSanc.className = 'compound-cell';
         ['Signal', 'Tele'].forEach(type => {
           let div = document.createElement('div'); div.className = 'compound-row'; div.innerHTML = `<span>${type.substring(0,4)}:</span>`;
-          let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.value = row['Sanctioned Amount ' + type] || ''; inp.disabled = !isAdmin;
+          let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.value = row['Sanctioned Amount ' + type] || ''; inp.disabled = !isAdmin || readOnly;
           inp.onchange = (e) => { tableData[localIndex]['Sanctioned Amount ' + type] = e.target.value; markRowModified(localIndex); };
           div.appendChild(inp); divSanc.appendChild(div);
         });
         tdSanc.appendChild(divSanc); tr.appendChild(tdSanc);
 
-        tr.appendChild(createStandardCell(row, localIndex, 'RCIL Provision', 'txt-short', 'RCIL...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'ENGG Provision', 'txt-short', 'ENGG...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'ELEC M Provision', 'txt-short', 'ELEC/M...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'ELEC TRD Provision', 'txt-short', 'ELEC/TRD...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'Schedule Amount', 'txt-short', 'Amount...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'Contingency', 'txt-short', 'Contingency...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'DG Provision Status', 'txt-short', 'D&G Status...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'Tender Awarded Value', 'txt-short', 'Award value...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'RCIL Provision', 'txt-short', 'RCIL...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'ENGG Provision', 'txt-short', 'ENGG...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'ELEC M Provision', 'txt-short', 'ELEC/M...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'ELEC TRD Provision', 'txt-short', 'ELEC/TRD...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'Schedule Amount', 'txt-short', 'Amount...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'Contingency', 'txt-short', 'Contingency...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'DG Provision Status', 'txt-short', 'D&G Status...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'Tender Awarded Value', 'txt-short', 'Award value...', readOnly));
 
         let tdTend = document.createElement('td'); let divTend = document.createElement('div'); divTend.className = 'compound-cell';
         ['Signal', 'Tele'].forEach(type => {
           let div = document.createElement('div'); div.className = 'compound-row'; div.innerHTML = `<span>${type.substring(0,4)}:</span>`;
-          let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.value = row['Tenders Position ' + type] || ''; inp.disabled = !isAdmin;
+          let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.value = row['Tenders Position ' + type] || ''; inp.disabled = !isAdmin || readOnly;
           inp.onchange = (e) => { tableData[localIndex]['Tenders Position ' + type] = e.target.value; markRowModified(localIndex); };
           div.appendChild(inp); divTend.appendChild(div);
         });
         tdTend.appendChild(divTend); tr.appendChild(tdTend);
 
-        tr.appendChild(createStandardCell(row, localIndex, 'Combined Stores Position Status', 'txt-work', 'Cables, LED, LC gate etc...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'GeM Provision Status', 'txt-work', 'Vehicle, manpower...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'Allocation', 'txt-short', 'Allocation...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'Acs Reference', 'txt-short', 'A/c Ref...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'Combined Stores Position Status', 'txt-work', 'Cables, LED...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'GeM Provision Status', 'txt-work', 'Vehicle, manpower...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'Allocation', 'txt-short', 'Allocation...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'Acs Reference', 'txt-short', 'A/c Ref...', readOnly));
 
         let tdSancND = document.createElement('td'); let divSancND = document.createElement('div'); divSancND.className = 'compound-cell';
-        let sNoInp = document.createElement('input'); sNoInp.type='text'; sNoInp.placeholder='No...'; sNoInp.value = row['Sanction No'] || ''; sNoInp.disabled = !isAdmin;
+        let sNoInp = document.createElement('input'); sNoInp.type='text'; sNoInp.placeholder='No...'; sNoInp.value = row['Sanction No'] || ''; sNoInp.disabled = !isAdmin || readOnly;
         sNoInp.onchange = (e) => { tableData[localIndex]['Sanction No'] = e.target.value; markRowModified(localIndex); };
-        let sDtInp = document.createElement('input'); sDtInp.type='date'; sDtInp.disabled = !isAdmin;
+        let sDtInp = document.createElement('input'); sDtInp.type='date'; sDtInp.disabled = !isAdmin || readOnly;
         if(row['Sanction Date']) sDtInp.value = new Date(row['Sanction Date']).toISOString().substring(0, 10);
         sDtInp.onchange = (e) => { tableData[localIndex]['Sanction Date'] = e.target.value; markRowModified(localIndex); };
         divSancND.appendChild(sNoInp); divSancND.appendChild(sDtInp); tdSancND.appendChild(divSancND); tr.appendChild(tdSancND);
 
         let tdPhys = document.createElement('td'); let divPhys = document.createElement('div'); divPhys.className = 'compound-cell';
-        let pPct = document.createElement('input'); pPct.type='text'; pPct.placeholder='%...'; pPct.value = row['Physical Condition Percent'] || ''; pPct.disabled = !isAdmin;
+        let pPct = document.createElement('input'); pPct.type='text'; pPct.placeholder='%...'; pPct.value = row['Physical Condition Percent'] || ''; pPct.disabled = !isAdmin || readOnly;
         pPct.onchange = (e) => { tableData[localIndex]['Physical Condition Percent'] = e.target.value; markRowModified(localIndex); };
-        let pSts = document.createElement('input'); pSts.type='text'; pSts.placeholder='Status...'; pSts.value = row['Physical Condition Status'] || ''; pSts.disabled = !isAdmin;
+        let pSts = document.createElement('input'); pSts.type='text'; pSts.placeholder='Status...'; pSts.value = row['Physical Condition Status'] || ''; pSts.disabled = !isAdmin || readOnly;
         pSts.onchange = (e) => { tableData[localIndex]['Physical Condition Status'] = e.target.value; markRowModified(localIndex); };
         divPhys.appendChild(pPct); divPhys.appendChild(pSts); tdPhys.appendChild(divPhys); tr.appendChild(tdPhys);
 
-        tr.appendChild(createStandardCell(row, localIndex, 'Finance Status', 'txt-short', 'Finance...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'Work Status', 'txt-short', 'Open/Close/Dropped...'));
-        tr.appendChild(createStandardCell(row, localIndex, 'Remarks', 'txt-work', 'Notes...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'Finance Status', 'txt-short', 'Finance...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'Work Status', 'txt-short', 'Open/Close/Dropped...', readOnly));
+        tr.appendChild(createStandardCell(row, localIndex, 'Remarks', 'txt-work', 'Notes...', readOnly));
         tbody.appendChild(tr);
       });
-      const totalPages = Math.ceil(totalRowsCount / ROWS_PER_PAGE) || 1;
-      document.getElementById('pageInfo').innerText = `Page ${currentPage} of ${totalPages}`;
-      document.getElementById('prevBtn').disabled = currentPage === 1;
-      document.getElementById('nextBtn').disabled = currentPage === totalPages;
+      
+      if(!readOnly) {
+        const totalPages = Math.ceil(totalRowsCount / ROWS_PER_PAGE) || 1;
+        document.getElementById('pageInfo').innerText = `Page ${currentPage} of ${totalPages}`;
+        document.getElementById('prevBtn').disabled = currentPage === 1;
+        document.getElementById('nextBtn').disabled = currentPage === totalPages;
+      }
     }
 
     document.getElementById('globalFileInput').addEventListener('change', function(e) {
