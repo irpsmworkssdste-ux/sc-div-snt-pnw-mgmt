@@ -13,6 +13,7 @@
     .tabs-container { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 10px; border-bottom: 2px solid #ccc; white-space: nowrap; -webkit-overflow-scrolling: touch; }
     .tab-button { padding: 6px 14px; background: #e0e0e0; border: 1px solid #ccc; border-bottom: none; border-radius: 4px 4px 0 0; cursor: pointer; font-weight: bold; font-size: 11px; color: #555; transition: all 0.2s; }
     .tab-button:hover { background: #d5d5d5; }
+    .tab-button:disabled { opacity: 0.5; cursor: not-allowed; }
     .tab-button.active { background: #4285F4; color: white; border-color: #4285F4; }
     .tab-summary { background: #fbbc05; color: #333; }
 
@@ -33,6 +34,7 @@
     .compound-row span { font-size: 10px; color: #666; font-weight: bold; }
     
     .top-btn { padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; font-size: 12px; }
+    .top-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-admin { background: #333; color: white; }
     .btn-add { background: #4285F4; color: white; }
     .btn-export { background: #107c41; color: white; margin-right: 5px; }
@@ -65,7 +67,7 @@
     
     <div class="search-box">
       <input type="text" id="searchInput" class="search-input" placeholder="Search across all works...">
-      <button class="search-btn" onclick="executeSearch()">🔍 Search</button>
+      <button class="search-btn" id="searchBtn" onclick="executeSearch()">🔍 Search</button>
     </div>
 
     <div style="display: flex; gap: 8px;">
@@ -99,12 +101,14 @@
   <input type="file" id="globalFileInput" style="display:none;">
 
   <script>
-    // --- CONNECT FRONTEND TO APPS SCRIPT API ---
     const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyVkoQfOEj98QVrEkKomhZZkrWw4eciVvqRRhl3nNCwCSIqe_8SdfP9kW9VmwrXOorX/exec";
 
     const tabsList = ["Summary", "1500", "1600", "1700", "2900", "3300", "3000", "3100", "3200", "4200", "5300", "6400", "Deposit work", "Other works"];
     let currentTab = tabsList[0];
     let isSearchMode = false;
+
+    // Operational lockdown flags to protect Sheet lock concurrency limits
+    let isSaving = false;
 
     const DB_HEADERS = ['S.No', 'Name of the Work', 'Status', 'AE Date', 'AE Cost Signal', 'AE Cost Tele', 'AE File Signal', 'AE File Tele', 'DE Date', 'DE Cost Signal', 'DE Cost Tele', 'DE File Signal', 'DE File Tele', 'Schedule Date', 'Schedule Cost Signal', 'Schedule Cost Tele', 'Schedule File Signal', 'Schedule File Tele', 'IRPSM NO', 'Sanctioned Amount Signal', 'Sanctioned Amount Tele', 'RCIL Provision', 'ENGG Provision', 'ELEC M Provision', 'ELEC TRD Provision', 'Schedule Amount', 'Contingency', 'DG Provision Status', 'Tender Awarded Value', 'Tenders Position Signal', 'Tenders Position Tele', 'Combined Stores Position Status', 'GeM Provision Status', 'Allocation', 'Acs Reference', 'Sanction No', 'Sanction Date', 'Physical Condition Percent', 'Physical Condition Status', 'Finance Status', 'Work Status', 'Remarks'];
 
@@ -122,39 +126,44 @@
 
     window.onload = function() { 
       if(WEB_APP_URL === "PASTE_YOUR_GOOGLE_WEB_APP_URL_HERE") {
-        setStatus("❌ CONFIG ERROR: You forgot to replace the placeholder on Line 82 with your deployed macro URL.");
-        return;
+        setStatus("❌ CONFIG ERROR: Line 81 needs your deployed web app URL."); return;
       }
-      buildTabsUI(); 
-      loadPage(1); 
+      buildTabsUI(); loadPage(1); 
     };
 
     function buildTabsUI() {
-      const container = document.getElementById('tabsBar');
-      container.innerHTML = '';
+      const container = document.getElementById('tabsBar'); container.innerHTML = '';
       tabsList.forEach(tab => {
         let btn = document.createElement('button');
         btn.className = `tab-button ${tab === 'Summary' ? 'tab-summary' : ''} ${tab === currentTab && !isSearchMode ? 'active' : ''}`;
         btn.innerText = tab;
+        btn.disabled = isSaving; // Global Lockout
         btn.onclick = () => switchTab(tab);
         container.appendChild(btn);
       });
       if (isSearchMode) {
-        let btn = document.createElement('button');
-        btn.className = 'tab-button active';
-        btn.innerText = '🔍 Search Results';
-        container.appendChild(btn);
+        let btn = document.createElement('button'); btn.className = 'tab-button active'; btn.innerText = '🔍 Search Results';
+        btn.disabled = isSaving; container.appendChild(btn);
       }
+    }
+
+    // --- LOCKOUT ENGINE ---
+    function setGlobalExecutionLockout(loading) {
+      isSaving = loading;
+      document.getElementById('saveBatchBtn').disabled = loading;
+      document.getElementById('addBtn').disabled = loading;
+      document.getElementById('loginBtn').disabled = loading;
+      document.getElementById('searchBtn').disabled = loading;
+      document.getElementById('exportBtn').disabled = loading;
+      buildTabsUI(); // Re-render tab arrays to inject disabled flags
     }
 
     function switchTab(tabName) {
       if(currentTab === tabName && !isSearchMode) return;
       if (Object.keys(modifiedRows).length > 0 && !confirm("Discard unsaved changes?")) return;
-      isSearchMode = false;
-      currentTab = tabName;
+      isSearchMode = false; currentTab = tabName;
       document.getElementById('searchInput').value = '';
-      buildTabsUI();
-      loadPage(1);
+      buildTabsUI(); loadPage(1);
     }
 
     function toggleLogin() {
@@ -163,12 +172,9 @@
         isAdmin = false; currentPassword = "";
         document.getElementById('loginBtn').innerText = "🔒 Admin Login";
         document.getElementById('adminControls').style.display = "none";
-        modifiedRows = {}; clientTabCache = {}; 
-        updateSaveUI();
-        loadPage(currentPage, true);
+        modifiedRows = {}; clientTabCache = {}; updateSaveUI(); loadPage(currentPage, true);
       } else {
-        const pwd = prompt("Enter Admin Password:");
-        if (!pwd) return;
+        const pwd = prompt("Enter Admin Password:"); if (!pwd) return;
         setStatus('Verifying...');
         safeFetch(`${WEB_APP_URL}?action=verifyAdmin&password=${encodeURIComponent(pwd)}`, "Verifying Admin Credential")
           .then(res => {
@@ -176,8 +182,7 @@
               isAdmin = true; currentPassword = pwd;
               document.getElementById('loginBtn').innerText = "🔓 Logout";
               document.getElementById('adminControls').style.display = "inline-flex";
-              clientTabCache = {}; 
-              loadPage(currentPage, true); 
+              clientTabCache = {}; loadPage(currentPage, true); 
               setStatus('✔ Admin verified'); setTimeout(() => setStatus(''), 2000);
             } else { alert("Incorrect password!"); setStatus(''); }
           });
@@ -185,42 +190,27 @@
     }
 
     function setStatus(msg) { 
-      const el = document.getElementById('syncStatus');
-      el.innerText = msg;
-      if(msg.includes("❌")) {
-        el.style.background = "#fadbd8";
-        el.style.border = "1px solid #e74c3c";
-      } else {
-        el.style.background = "none";
-        el.style.border = "none";
-      }
+      const el = document.getElementById('syncStatus'); el.innerText = msg;
+      if(msg.includes("❌")) { el.style.background = "#fadbd8"; el.style.border = "1px solid #e74c3c"; } 
+      else { el.style.background = "none"; el.style.border = "none"; }
     }
 
-    // --- PROTECTED NETWORK FALLBACK CONTROLLER ---
     function safeFetch(url, contextString, options = {}) {
-      options.redirect = "follow"; // Always cascade Google redirect macros
+      options.redirect = "follow";
       return fetch(url, options)
-        .then(res => {
-          if (!res.ok) throw new Error(`HTTP network response code: ${res.status}`);
-          return res.text();
-        })
+        .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.text(); })
         .then(text => {
-          try {
-            return JSON.parse(text);
-          } catch(e) {
-            // If JSON fails, inspect for standard Google authorization script blocker alerts
-            if (text.includes("<html") || text.includes("<!DOCTYPE") || text.includes("Authorization Required")) {
-              setStatus("❌ SCRIPT PERMISSION ERROR: Google returned an HTML login alert page instead of database text.");
-              alert("ACTION REQUIRED:\n\nYour macro is locked. Open Google Apps Script, click 'Deploy' > 'Manage deployments', Edit (Pencil), Version = 'New Version', and verify 'Who has access' is explicitly set to 'Anyone'. If Google requests access verification, click Allow.");
-            } else {
-              setStatus(`❌ PARSE EXCEPTION: Failed reading dataset configuration rules: ${e.message}`);
-            }
-            throw new Error("Invalid backend formatting layout payload.");
+          try { return JSON.parse(text); } catch(e) {
+            if (text.includes("<html") || text.includes("Authorization Required")) {
+              setStatus("❌ SCRIPT PERMISSION ERROR: Locked endpoint configuration detected.");
+              alert("ACTION REQUIRED:\n\nGo to Google Apps Script -> Deploy -> Manage Deployments -> Edit (Pencil) -> Select 'New Version' and verify 'Who has access' is set to 'Anyone'.");
+            } else { setStatus(`❌ PARSE EXCEPTION: ${e.message}`); }
+            throw new Error("Formatting rules broken.");
           }
         })
         .catch(err => {
-          setStatus(`❌ NETWORK DOWN: Failed during [${contextString}]: ${err.message}`);
-          document.getElementById('tableBody').innerHTML = `<tr><td colspan="26" style="color:red; font-weight:bold;">Connection pipeline halted. Refreshed authentication metrics requested.</td></tr>`;
+          setStatus(`❌ NETWORK DOWN during [${contextString}]: ${err.message}`);
+          document.getElementById('tableBody').innerHTML = `<tr><td colspan="26" style="color:red; font-weight:bold;">Connection halted. Try re-executing.</td></tr>`;
           throw err;
         });
     }
@@ -232,8 +222,7 @@
 
       const thead = document.getElementById('tableHead');
       thead.innerHTML = `<tr><th>Category / Allocation Tab</th><th>Total Active Works (Rows)</th><th>Action</th></tr>`;
-      const tbody = document.getElementById('tableBody');
-      tbody.innerHTML = '';
+      const tbody = document.getElementById('tableBody'); tbody.innerHTML = '';
       let total = 0;
 
       data.forEach(item => {
@@ -241,7 +230,7 @@
         tbody.innerHTML += `<tr>
           <td style="font-weight:bold; font-size:13px;">${item.tabName}</td>
           <td style="font-size:13px;">${item.count}</td>
-          <td><button class="top-btn btn-add" onclick="switchTab('${item.tabName}')">Open Dashboard ➔</button></td>
+          <td><button class="top-btn btn-add" ${isSaving ? 'disabled' : ''} onclick="switchTab('${item.tabName}')">Open Dashboard ➔</button></td>
         </tr>`;
       });
       tbody.innerHTML += `<tr style="background:#e0e0e0; font-weight:bold;"><td style="font-size:14px;">TOTAL ALL WORKS</td><td style="font-size:14px;">${total}</td><td></td></tr>`;
@@ -259,36 +248,35 @@
 
     function executeSearch() {
       const query = document.getElementById('searchInput').value.trim();
-      if(!query) return;
+      if(!query || isSaving) return;
       if (Object.keys(modifiedRows).length > 0 && !confirm("Discard unsaved changes?")) return;
       
-      isSearchMode = true;
-      buildTabsUI();
-      setStatus('Searching Database...');
+      isSearchMode = true; buildTabsUI(); setStatus('Searching Database...');
+      setGlobalExecutionLockout(true);
       
       safeFetch(`${WEB_APP_URL}?action=search&query=${encodeURIComponent(query)}`, "Running Global Search query")
         .then(data => {
-          tableData = data;
-          totalRowsCount = data.length;
-          renderStandardHeaders();
-          rebuildTable(true);
+          setGlobalExecutionLockout(false);
+          tableData = data; totalRowsCount = data.length;
+          renderStandardHeaders(); rebuildTable(true);
           setStatus(`Found ${data.length} matches`);
-        });
+        }).catch(() => setGlobalExecutionLockout(false));
     }
 
     function exportToCSV() {
-      if(currentTab === 'Summary') return;
+      if(currentTab === 'Summary' || isSaving) return;
       setStatus('Preparing Excel Data...');
       let targetUrl = isSearchMode ? false : `${WEB_APP_URL}?action=getAllData&tabName=${encodeURIComponent(currentTab)}`;
       if (targetUrl) {
-        safeFetch(targetUrl, "Downloading spreadsheet data").then(data => generateCSV(data, currentTab));
-      } else {
-        generateCSV(tableData, 'Search_Results');
-      }
+        setGlobalExecutionLockout(true);
+        safeFetch(targetUrl, "Downloading spreadsheet data")
+          .then(data => { setGlobalExecutionLockout(false); generateCSV(data, currentTab); })
+          .catch(() => setGlobalExecutionLockout(false));
+      } else { generateCSV(tableData, 'Search_Results'); }
     }
 
     function generateCSV(data, filenamePrefix) {
-      let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // Prepend BOM for correct Excel encoding alignment
+      let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
       csvContent += DB_HEADERS.join(",") + "\r\n";
       data.forEach((row, idx) => {
         let rowArr = [idx + 1];
@@ -299,58 +287,59 @@
         }
         csvContent += rowArr.join(",") + "\r\n";
       });
-      var encodedUri = encodeURI(csvContent);
-      var link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `${filenamePrefix}_Export.csv`);
-      document.body.appendChild(link);
-      link.click(); link.remove();
+      var encodedUri = encodeURI(csvContent); var link = document.createElement("a");
+      link.setAttribute("href", encodedUri); link.setAttribute("download", `${filenamePrefix}_Export.csv`);
+      document.body.appendChild(link); link.click(); link.remove();
       setStatus('✔ Export Complete'); setTimeout(() => setStatus(''), 2000);
     }
 
     function markRowModified(localIndex) {
-      const row = tableData[localIndex];
-      modifiedRows[row._absoluteIndex] = row; 
-      updateSaveUI();
+      const row = tableData[localIndex]; modifiedRows[row._absoluteIndex] = row; updateSaveUI();
     }
 
     function updateSaveUI() {
-      const btn = document.getElementById('saveBatchBtn');
-      const count = Object.keys(modifiedRows).length;
+      const btn = document.getElementById('saveBatchBtn'); const count = Object.keys(modifiedRows).length;
       btn.style.display = count > 0 ? 'inline-block' : 'none';
       btn.innerText = `💾 Save Changes (${count})`;
     }
 
     function commitBatchedChanges() {
-      if (!isAdmin) return;
-      const count = Object.keys(modifiedRows).length;
-      if(count === 0) return;
+      if (!isAdmin || isSaving) return;
+      const count = Object.keys(modifiedRows).length; if(count === 0) return;
 
       setStatus('Saving to Cloud...');
+      setGlobalExecutionLockout(true);
       document.getElementById('saveBatchBtn').innerText = '⏳ Saving...';
       
       safeFetch(WEB_APP_URL, "Committing batched data modifications", {
         method: "POST",
         body: JSON.stringify({ action: "saveBatch", tabName: currentTab, password: currentPassword, modifiedRows: modifiedRows })
       }).then(response => {
+          setGlobalExecutionLockout(false);
           if (!response.success) { alert("Session expired or unauthorized."); toggleLogin(); } 
           else { 
             modifiedRows = {}; invalidateLocalCache(currentTab); updateSaveUI();
             setStatus('✔ Saved'); setTimeout(() => setStatus(''), 2000); 
           }
-        });
+        }).catch(() => setGlobalExecutionLockout(false));
+    }
+
+    function invalidateLocalCache(tabName) {
+      for (let key in clientTabCache) { if (key.startsWith(tabName + '_')) delete clientTabCache[key]; }
     }
 
     function loadPage(page, forceRefetch = false) {
-      if (isSearchMode) return;
-      if (Object.keys(modifiedRows).length > 0 && !forceRefetch && !confirm("You have unsaved changes! Discard them to change pages?")) return;
+      if (isSearchMode || isSaving) return;
+      if (Object.keys(modifiedRows).length > 0 && !forceRefetch && !confirm("Discard unsaved changes?")) return;
       
-      modifiedRows = {}; updateSaveUI();
-      currentPage = page;
+      modifiedRows = {}; updateSaveUI(); currentPage = page;
 
       if (currentTab === 'Summary') {
         setStatus('Fetching Dashboard Summary metrics...');
-        safeFetch(`${WEB_APP_URL}?action=getSummary`, "Loading Summary Portal").then(data => { renderSummaryDashboard(data); setStatus(''); });
+        setGlobalExecutionLockout(true);
+        safeFetch(`${WEB_APP_URL}?action=getSummary`, "Loading Summary Portal")
+          .then(data => { setGlobalExecutionLockout(false); renderSummaryDashboard(data); setStatus(''); })
+          .catch(() => setGlobalExecutionLockout(false));
         return;
       }
 
@@ -358,106 +347,102 @@
       const cacheKey = currentTab + '_P' + page;
 
       if (!forceRefetch && clientTabCache[cacheKey]) {
-        tableData = clientTabCache[cacheKey].data;
-        totalRowsCount = clientTabCache[cacheKey].totalRows;
+        tableData = clientTabCache[cacheKey].data; totalRowsCount = clientTabCache[cacheKey].totalRows;
         rebuildTable(); return;
       }
       
       setStatus(`Fetching Page ${page}...`);
+      setGlobalExecutionLockout(true);
       safeFetch(`${WEB_APP_URL}?action=getData&tabName=${encodeURIComponent(currentTab)}&page=${page}&limit=${ROWS_PER_PAGE}&isAdmin=${isAdmin}`, "Loading grid entries")
         .then(response => {
-          tableData = response.data;
-          totalRowsCount = response.totalRows;
+          setGlobalExecutionLockout(false);
+          tableData = response.data; totalRowsCount = response.totalRows;
           clientTabCache[cacheKey] = { data: response.data, totalRows: response.totalRows };
           setStatus(''); rebuildTable(); 
-        });
+        }).catch(() => setGlobalExecutionLockout(false));
     }
 
     function changePage(dir) { loadPage(currentPage + dir); }
 
     function addRow() {
-      if (!isAdmin || currentTab === 'Summary' || isSearchMode) return;
+      if (!isAdmin || currentTab === 'Summary' || isSearchMode || isSaving) return;
       setStatus('Adding row...');
+      setGlobalExecutionLockout(true);
       safeFetch(WEB_APP_URL, "Appending new empty entry instance row", { method: "POST", body: JSON.stringify({ action: "addRow", tabName: currentTab, password: currentPassword }) })
         .then(response => {
+          setGlobalExecutionLockout(false);
           if (response.success) {
             totalRowsCount = response.newTotalRows; invalidateLocalCache(currentTab);
             loadPage(Math.ceil(totalRowsCount / ROWS_PER_PAGE) || 1, true);
             setStatus('✔ Row Added'); setTimeout(() => setStatus(''), 2000);
           }
-        });
+        }).catch(() => setGlobalExecutionLockout(false));
     }
     
     window.removeRow = function(absoluteIndex) {
-      if (!isAdmin || isSearchMode) return;
+      if (!isAdmin || isSearchMode || isSaving) return;
       if (confirm(`PERMANENTLY DELETE Row ${absoluteIndex + 1} from Tab ${currentTab}?`)) {
         setStatus('Deleting Row...');
+        setGlobalExecutionLockout(true);
         safeFetch(WEB_APP_URL, "Deleting targeted active row indexes", { method: "POST", body: JSON.stringify({ action: "deleteRow", tabName: currentTab, password: currentPassword, rowIndex: absoluteIndex }) })
           .then(response => {
+            setGlobalExecutionLockout(false);
             if (response.success) { invalidateLocalCache(currentTab); loadPage(currentPage, true); setStatus('✔ Row Deleted'); setTimeout(() => setStatus(''), 2000); } 
             else { alert("Error: " + response.error); setStatus(''); }
-          });
+          }).catch(() => setGlobalExecutionLockout(false));
       }
     };
 
     window.deleteFileLink = function(localIndex, key) {
-      if(!isAdmin || isSearchMode) return;
+      if(!isAdmin || isSearchMode || isSaving) return;
       if(confirm(`Remove this file link permanently?`)) { 
-        delete tableData[localIndex][key]; 
-        markRowModified(localIndex); 
-        commitBatchedChanges(); 
-        rebuildTable(); 
+        delete tableData[localIndex][key]; markRowModified(localIndex); commitBatchedChanges(); rebuildTable(); 
       }
     }
 
     function createCompoundCell(row, localIndex, prefix, readOnly) {
-      let td = document.createElement('td');
-      let container = document.createElement('div'); container.className = 'compound-cell';
+      let td = document.createElement('td'); let container = document.createElement('div'); container.className = 'compound-cell';
       let dateInput = document.createElement('input'); dateInput.type = 'date';
       if(row[prefix + ' Date']) dateInput.value = new Date(row[prefix + ' Date']).toISOString().substring(0, 10);
-      dateInput.disabled = !isAdmin || readOnly;
+      dateInput.disabled = !isAdmin || readOnly || isSaving;
       dateInput.onchange = (e) => { tableData[localIndex][prefix + ' Date'] = e.target.value; markRowModified(localIndex); };
       container.appendChild(dateInput);
 
       ['Signal', 'Tele'].forEach(type => {
-        let div = document.createElement('div'); div.className = 'compound-row';
-        div.innerHTML = `<span>Cost ${type.substring(0,4)}:</span>`;
+        let div = document.createElement('div'); div.className = 'compound-row'; div.innerHTML = `<span>Cost ${type.substring(0,4)}:</span>`;
         let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.placeholder = 'Amt...';
-        inp.value = row[prefix + ' Cost ' + type] || ''; inp.disabled = !isAdmin || readOnly;
+        inp.value = row[prefix + ' Cost ' + type] || ''; inp.disabled = !isAdmin || readOnly || isSaving;
         inp.onchange = (e) => { tableData[localIndex][prefix + ' Cost ' + type] = e.target.value; markRowModified(localIndex); };
         div.appendChild(inp); container.appendChild(div);
       });
 
-      let fileRow = document.createElement('div'); fileRow.className = 'compound-row';
-      fileRow.innerHTML = `<span>Est Docs:</span><div></div>`;
+      let fileRow = document.createElement('div'); fileRow.className = 'compound-row'; fileRow.innerHTML = `<span>Est Docs:</span><div></div>`;
       let fileBtnGroup = fileRow.querySelector('div');
 
       ['Signal', 'Tele'].forEach(type => {
         let fileKey = prefix + ' File ' + type;
         if (row[fileKey]) {
-          fileBtnGroup.innerHTML += `<button class="icon-btn" onclick="window.open('${row[fileKey]}', '_blank')" title="Download">📥${type.substring(0,1)}</button>`;
+          fileBtnGroup.innerHTML += `<button class="icon-btn" ${isSaving ? 'disabled' : ''} onclick="window.open('${row[fileKey]}', '_blank')" title="Download">📥${type.substring(0,1)}</button>`;
           if(isAdmin && !readOnly) {
-            fileBtnGroup.innerHTML += `<button class="icon-btn" onclick="triggerFilePicker(${localIndex}, '${fileKey}')" title="Replace">🔄</button>`;
-            fileBtnGroup.innerHTML += `<button class="icon-btn" onclick="deleteFileLink(${localIndex}, '${fileKey}')" title="Delete">❌</button>`;
+            fileBtnGroup.innerHTML += `<button class="icon-btn" ${isSaving ? 'disabled' : ''} onclick="triggerFilePicker(${localIndex}, '${fileKey}')" title="Replace">🔄</button>`;
+            fileBtnGroup.innerHTML += `<button class="icon-btn" ${isSaving ? 'disabled' : ''} onclick="deleteFileLink(${localIndex}, '${fileKey}')" title="Delete">❌</button>`;
           }
         } else if (isAdmin && !readOnly) {
-          fileBtnGroup.innerHTML += `<button class="icon-btn" onclick="triggerFilePicker(${localIndex}, '${fileKey}')" title="Upload">📤${type.substring(0,1)}</button>`;
+          fileBtnGroup.innerHTML += `<button class="icon-btn" ${isSaving ? 'disabled' : ''} onclick="triggerFilePicker(${localIndex}, '${fileKey}')" title="Upload">📤${type.substring(0,1)}</button>`;
         } else { fileBtnGroup.innerHTML += `<span style="color:#ccc;margin-right:4px;">➖</span>`; }
       });
       container.appendChild(fileRow); td.appendChild(container); return td;
     }
 
     window.triggerFilePicker = function(localIndex, fileKey) {
-      if (!isAdmin || isSearchMode) return; 
+      if (!isAdmin || isSearchMode || isSaving) return; 
       currentUploadMeta = { index: localIndex, key: fileKey };
-      const fileInput = document.getElementById('globalFileInput');
-      fileInput.value = ''; fileInput.click();
+      const fileInput = document.getElementById('globalFileInput'); fileInput.value = ''; fileInput.click();
     };
 
     function createStandardCell(row, localIndex, key, className, placeholder, readOnly) {
-      let td = document.createElement('td');
-      let inp = document.createElement('input'); inp.type = 'text'; inp.className = className; inp.placeholder = placeholder;
-      inp.value = row[key] || ''; inp.disabled = !isAdmin || readOnly;
+      let td = document.createElement('td'); let inp = document.createElement('input'); inp.type = 'text'; inp.className = className; inp.placeholder = placeholder;
+      inp.value = row[key] || ''; inp.disabled = !isAdmin || readOnly || isSaving;
       inp.onchange = (e) => { tableData[localIndex][key] = e.target.value; markRowModified(localIndex); };
       td.appendChild(inp); return td;
     }
@@ -465,14 +450,12 @@
     function rebuildTable(readOnly = false) {
       const tbody = document.getElementById('tableBody'); tbody.innerHTML = ''; 
       if (tableData.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="26" style="color:#999;padding:20px;">No records found.</td></tr>`;
-        return;
+        tbody.innerHTML = `<tr><td colspan="26" style="color:#999;padding:20px;">No records found.</td></tr>`; return;
       }
       tableData.forEach((row, localIndex) => {
-        let absIndex = row._absoluteIndex; const tr = document.createElement('tr');
-        let tdSno = document.createElement('td');
+        let absIndex = row._absoluteIndex; const tr = document.createElement('tr'); let tdSno = document.createElement('td');
         let label = readOnly ? `[${row._tabName}]<br>#${absIndex + 1}` : (absIndex + 1);
-        if (isAdmin && !readOnly) { tdSno.innerHTML = `<div class="sno-cell"><span>${label}</span><button class="icon-btn" onclick="removeRow(${absIndex})" title="Delete Row">🗑️</button></div>`; } 
+        if (isAdmin && !readOnly) { tdSno.innerHTML = `<div class="sno-cell"><span>${label}</span><button class="icon-btn" ${isSaving ? 'disabled' : ''} onclick="removeRow(${absIndex})" title="Delete Row">🗑️</button></div>`; } 
         else { tdSno.innerHTML = label; }
         tr.appendChild(tdSno);
 
@@ -486,7 +469,7 @@
         let tdSanc = document.createElement('td'); let divSanc = document.createElement('div'); divSanc.className = 'compound-cell';
         ['Signal', 'Tele'].forEach(type => {
           let div = document.createElement('div'); div.className = 'compound-row'; div.innerHTML = `<span>${type.substring(0,4)}:</span>`;
-          let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.value = row['Sanctioned Amount ' + type] || ''; inp.disabled = !isAdmin || readOnly;
+          let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.value = row['Sanctioned Amount ' + type] || ''; inp.disabled = !isAdmin || readOnly || isSaving;
           inp.onchange = (e) => { tableData[localIndex]['Sanctioned Amount ' + type] = e.target.value; markRowModified(localIndex); };
           div.appendChild(inp); divSanc.appendChild(div);
         });
@@ -504,7 +487,7 @@
         let tdTend = document.createElement('td'); let divTend = document.createElement('div'); divTend.className = 'compound-cell';
         ['Signal', 'Tele'].forEach(type => {
           let div = document.createElement('div'); div.className = 'compound-row'; div.innerHTML = `<span>${type.substring(0,4)}:</span>`;
-          let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.value = row['Tenders Position ' + type] || ''; inp.disabled = !isAdmin || readOnly;
+          let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.value = row['Tenders Position ' + type] || ''; inp.disabled = !isAdmin || readOnly || isSaving;
           inp.onchange = (e) => { tableData[localIndex]['Tenders Position ' + type] = e.target.value; markRowModified(localIndex); };
           div.appendChild(inp); divTend.appendChild(div);
         });
@@ -516,17 +499,17 @@
         tr.appendChild(createStandardCell(row, localIndex, 'Acs Reference', 'txt-short', 'A/c Ref...', readOnly));
 
         let tdSancND = document.createElement('td'); let divSancND = document.createElement('div'); divSancND.className = 'compound-cell';
-        let sNoInp = document.createElement('input'); sNoInp.type='text'; sNoInp.placeholder='No...'; sNoInp.value = row['Sanction No'] || ''; sNoInp.disabled = !isAdmin || readOnly;
+        let sNoInp = document.createElement('input'); sNoInp.type='text'; sNoInp.placeholder='No...'; sNoInp.value = row['Sanction No'] || ''; sNoInp.disabled = !isAdmin || readOnly || isSaving;
         sNoInp.onchange = (e) => { tableData[localIndex]['Sanction No'] = e.target.value; markRowModified(localIndex); };
-        let sDtInp = document.createElement('input'); sDtInp.type='date'; sDtInp.disabled = !isAdmin || readOnly;
+        let sDtInp = document.createElement('input'); sDtInp.type='date'; sDtInp.disabled = !isAdmin || readOnly || isSaving;
         if(row['Sanction Date']) sDtInp.value = new Date(row['Sanction Date']).toISOString().substring(0, 10);
         sDtInp.onchange = (e) => { tableData[localIndex]['Sanction Date'] = e.target.value; markRowModified(localIndex); };
         divSancND.appendChild(sNoInp); divSancND.appendChild(sDtInp); tdSancND.appendChild(divSancND); tr.appendChild(tdSancND);
 
         let tdPhys = document.createElement('td'); let divPhys = document.createElement('div'); divPhys.className = 'compound-cell';
-        let pPct = document.createElement('input'); pPct.type='text'; pPct.placeholder='%...'; pPct.value = row['Physical Condition Percent'] || ''; pPct.disabled = !isAdmin || readOnly;
+        let pPct = document.createElement('input'); pPct.type='text'; pPct.placeholder='%...'; pPct.value = row['Physical Condition Percent'] || ''; pPct.disabled = !isAdmin || readOnly || isSaving;
         pPct.onchange = (e) => { tableData[localIndex]['Physical Condition Percent'] = e.target.value; markRowModified(localIndex); };
-        let pSts = document.createElement('input'); pSts.type='text'; pSts.placeholder='Status...'; pSts.value = row['Physical Condition Status'] || ''; pSts.disabled = !isAdmin || readOnly;
+        let pSts = document.createElement('input'); pSts.type='text'; pSts.placeholder='Status...'; pSts.value = row['Physical Condition Status'] || ''; pSts.disabled = !isAdmin || readOnly || isSaving;
         pSts.onchange = (e) => { tableData[localIndex]['Physical Condition Status'] = e.target.value; markRowModified(localIndex); };
         divPhys.appendChild(pPct); divPhys.appendChild(pSts); tdPhys.appendChild(divPhys); tr.appendChild(tdPhys);
 
@@ -538,23 +521,24 @@
       if(!readOnly) {
         const totalPages = Math.ceil(totalRowsCount / ROWS_PER_PAGE) || 1;
         document.getElementById('pageInfo').innerText = `Page ${currentPage} of ${totalPages}`;
-        document.getElementById('prevBtn').disabled = currentPage === 1;
-        document.getElementById('nextBtn').disabled = currentPage === totalPages;
+        document.getElementById('prevBtn').disabled = currentPage === 1 || isSaving;
+        document.getElementById('nextBtn').disabled = currentPage === totalPages || isSaving;
       }
     }
 
     document.getElementById('globalFileInput').addEventListener('change', function(e) {
-      if (this.files.length === 0 || !currentUploadMeta) return;
+      if (this.files.length === 0 || !currentUploadMeta || isSaving) return;
       const file = this.files[0]; const reader = new FileReader(); const meta = currentUploadMeta;
-      setStatus('⏳ Uploading document to Drive...');
+      setStatus('⏳ Uploading document to Drive...'); setGlobalExecutionLockout(true);
       reader.onload = function(event) {
         safeFetch(WEB_APP_URL, "Uploading binary file to Drive storage pipeline", {
           method: "POST",
           body: JSON.stringify({ action: "uploadFile", base64Data: event.target.result, fileName: file.name })
         }).then(response => {
+            setGlobalExecutionLockout(false);
             if (response.error) { alert("Upload error: " + response.error); setStatus('❌ Failed'); } 
             else { setStatus('✔ Uploaded (Unsaved)'); tableData[meta.index][meta.key] = response.url; markRowModified(meta.index); rebuildTable(); }
-          });
+          }).catch(() => setGlobalExecutionLockout(false));
       }; reader.readAsDataURL(file);
     });
   </script>
