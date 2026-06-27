@@ -8,7 +8,7 @@
     body { font-family: Arial, sans-serif; padding: 15px; background-color: #f4f4f9; margin: 0; font-size: 11px; display: flex; flex-direction: column; min-height: 95vh;}
     .header-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;}
     h2 { margin: 0; color: #333; font-size: 16px; }
-    .status-text { color: #d93025; font-size: 12px; margin-left: 10px; font-weight: bold; }
+    .status-text { color: #d93025; font-size: 12px; margin-left: 10px; font-weight: bold; padding: 4px 8px; border-radius: 4px; }
     
     .tabs-container { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 10px; border-bottom: 2px solid #ccc; white-space: nowrap; -webkit-overflow-scrolling: touch; }
     .tab-button { padding: 6px 14px; background: #e0e0e0; border: 1px solid #ccc; border-bottom: none; border-radius: 4px 4px 0 0; cursor: pointer; font-weight: bold; font-size: 11px; color: #555; transition: all 0.2s; }
@@ -82,10 +82,9 @@
 
   <div class="table-wrapper">
     <table id="mainTable">
-      <thead id="tableHead">
-        </thead>
+      <thead id="tableHead"></thead>
       <tbody id="tableBody">
-        <tr><td colspan="26">Loading database matrix... please wait.</td></tr>
+        <tr><td colspan="26">Initializing connection configuration pipeline...</td></tr>
       </tbody>
     </table>
   </div>
@@ -101,13 +100,12 @@
 
   <script>
     // --- CONNECT FRONTEND TO APPS SCRIPT API ---
-    const WEB_APP_URL = "https://script.google.com/macros/library/d/1wNCwQzfUjSeMzASE0ySYtNEgXkt_RjChQaDpzPJkgWIoiMEFedHbo4Il/2";
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyVkoQfOEj98QVrEkKomhZZkrWw4eciVvqRRhl3nNCwCSIqe_8SdfP9kW9VmwrXOorX/exec";
 
     const tabsList = ["Summary", "1500", "1600", "1700", "2900", "3300", "3000", "3100", "3200", "4200", "5300", "6400", "Deposit work", "Other works"];
     let currentTab = tabsList[0];
     let isSearchMode = false;
 
-    // We must define DB_HEADERS here for the Excel Export to map perfectly
     const DB_HEADERS = ['S.No', 'Name of the Work', 'Status', 'AE Date', 'AE Cost Signal', 'AE Cost Tele', 'AE File Signal', 'AE File Tele', 'DE Date', 'DE Cost Signal', 'DE Cost Tele', 'DE File Signal', 'DE File Tele', 'Schedule Date', 'Schedule Cost Signal', 'Schedule Cost Tele', 'Schedule File Signal', 'Schedule File Tele', 'IRPSM NO', 'Sanctioned Amount Signal', 'Sanctioned Amount Tele', 'RCIL Provision', 'ENGG Provision', 'ELEC M Provision', 'ELEC TRD Provision', 'Schedule Amount', 'Contingency', 'DG Provision Status', 'Tender Awarded Value', 'Tenders Position Signal', 'Tenders Position Tele', 'Combined Stores Position Status', 'GeM Provision Status', 'Allocation', 'Acs Reference', 'Sanction No', 'Sanction Date', 'Physical Condition Percent', 'Physical Condition Status', 'Finance Status', 'Work Status', 'Remarks'];
 
     let clientTabCache = {}; 
@@ -122,7 +120,14 @@
     const ROWS_PER_PAGE = 25; 
     let currentUploadMeta = null;
 
-    window.onload = function() { buildTabsUI(); loadPage(1); };
+    window.onload = function() { 
+      if(WEB_APP_URL === "PASTE_YOUR_GOOGLE_WEB_APP_URL_HERE") {
+        setStatus("❌ CONFIG ERROR: You forgot to replace the placeholder on Line 82 with your deployed macro URL.");
+        return;
+      }
+      buildTabsUI(); 
+      loadPage(1); 
+    };
 
     function buildTabsUI() {
       const container = document.getElementById('tabsBar');
@@ -144,7 +149,7 @@
 
     function switchTab(tabName) {
       if(currentTab === tabName && !isSearchMode) return;
-      if (Object.keys(modifiedRows).length > 0 && !confirm("You have unsaved changes! Discard them and switch tabs?")) return;
+      if (Object.keys(modifiedRows).length > 0 && !confirm("Discard unsaved changes?")) return;
       isSearchMode = false;
       currentTab = tabName;
       document.getElementById('searchInput').value = '';
@@ -161,13 +166,11 @@
         modifiedRows = {}; clientTabCache = {}; 
         updateSaveUI();
         loadPage(currentPage, true);
-        setStatus('Logged out'); setTimeout(() => setStatus(''), 2000);
       } else {
         const pwd = prompt("Enter Admin Password:");
         if (!pwd) return;
         setStatus('Verifying...');
-        fetch(`${WEB_APP_URL}?action=verifyAdmin&password=${encodeURIComponent(pwd)}`)
-          .then(res => res.json())
+        safeFetch(`${WEB_APP_URL}?action=verifyAdmin&password=${encodeURIComponent(pwd)}`, "Verifying Admin Credential")
           .then(res => {
             if (res.isValid) {
               isAdmin = true; currentPassword = pwd;
@@ -177,13 +180,51 @@
               loadPage(currentPage, true); 
               setStatus('✔ Admin verified'); setTimeout(() => setStatus(''), 2000);
             } else { alert("Incorrect password!"); setStatus(''); }
-          }).catch(() => { alert("Network Connection Error"); setStatus(''); });
+          });
       }
     }
 
-    function setStatus(msg) { document.getElementById('syncStatus').innerText = msg; }
+    function setStatus(msg) { 
+      const el = document.getElementById('syncStatus');
+      el.innerText = msg;
+      if(msg.includes("❌")) {
+        el.style.background = "#fadbd8";
+        el.style.border = "1px solid #e74c3c";
+      } else {
+        el.style.background = "none";
+        el.style.border = "none";
+      }
+    }
 
-    // --- NEW: SUMMARY PORTAL LOGIC ---
+    // --- PROTECTED NETWORK FALLBACK CONTROLLER ---
+    function safeFetch(url, contextString, options = {}) {
+      options.redirect = "follow"; // Always cascade Google redirect macros
+      return fetch(url, options)
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP network response code: ${res.status}`);
+          return res.text();
+        })
+        .then(text => {
+          try {
+            return JSON.parse(text);
+          } catch(e) {
+            // If JSON fails, inspect for standard Google authorization script blocker alerts
+            if (text.includes("<html") || text.includes("<!DOCTYPE") || text.includes("Authorization Required")) {
+              setStatus("❌ SCRIPT PERMISSION ERROR: Google returned an HTML login alert page instead of database text.");
+              alert("ACTION REQUIRED:\n\nYour macro is locked. Open Google Apps Script, click 'Deploy' > 'Manage deployments', Edit (Pencil), Version = 'New Version', and verify 'Who has access' is explicitly set to 'Anyone'. If Google requests access verification, click Allow.");
+            } else {
+              setStatus(`❌ PARSE EXCEPTION: Failed reading dataset configuration rules: ${e.message}`);
+            }
+            throw new Error("Invalid backend formatting layout payload.");
+          }
+        })
+        .catch(err => {
+          setStatus(`❌ NETWORK DOWN: Failed during [${contextString}]: ${err.message}`);
+          document.getElementById('tableBody').innerHTML = `<tr><td colspan="26" style="color:red; font-weight:bold;">Connection pipeline halted. Refreshed authentication metrics requested.</td></tr>`;
+          throw err;
+        });
+    }
+
     function renderSummaryDashboard(data) {
       document.getElementById('paginationBar').style.display = 'none';
       document.getElementById('exportBtn').style.display = 'none';
@@ -191,7 +232,6 @@
 
       const thead = document.getElementById('tableHead');
       thead.innerHTML = `<tr><th>Category / Allocation Tab</th><th>Total Active Works (Rows)</th><th>Action</th></tr>`;
-      
       const tbody = document.getElementById('tableBody');
       tbody.innerHTML = '';
       let total = 0;
@@ -211,39 +251,12 @@
       document.getElementById('paginationBar').style.display = isSearchMode ? 'none' : 'flex';
       document.getElementById('exportBtn').style.display = 'inline-block';
       if(isAdmin) document.getElementById('addBtn').style.display = 'inline-block';
-
       const thead = document.getElementById('tableHead');
       thead.innerHTML = `<tr>
-          <th>Sl. No</th>
-          <th style="width: 220px;">Name of the Work</th>
-          <th>Status</th>
-          <th>AE Submission & Estimates</th>
-          <th>DE Submission & Estimates</th>
-          <th>Schedule Submission & Estimates</th>
-          <th>IRPSM NO.</th>
-          <th>Sanctioned Amt (Sign/Tele)</th>
-          <th>RCIL Provision</th>
-          <th>ENGG Provision</th>
-          <th>ELEC /M Provision</th>
-          <th>ELEC /TRD Provision</th>
-          <th>Schedule Amount</th>
-          <th>Contingency</th>
-          <th>D&G Prov. / Status</th>
-          <th>Tender Awarded Value</th>
-          <th>Tenders Position (Sign/Tele)</th>
-          <th>Combined Stores Position</th>
-          <th>GeM Prov. (Veh/Manpower)</th>
-          <th>Allocation</th>
-          <th>A/c s Reference</th>
-          <th>Sanction No & Date</th>
-          <th>Physical Condition (% / Status)</th>
-          <th>Finance Status</th>
-          <th>Work Status</th>
-          <th>Remarks</th>
+          <th>Sl. No</th><th style="width: 220px;">Name of the Work</th><th>Status</th><th>AE Submission & Estimates</th><th>DE Submission & Estimates</th><th>Schedule Submission & Estimates</th><th>IRPSM NO.</th><th>Sanctioned Amt (Sign/Tele)</th><th>RCIL Provision</th><th>ENGG Provision</th><th>ELEC /M Provision</th><th>ELEC /TRD Provision</th><th>Schedule Amount</th><th>Contingency</th><th>D&G Prov. / Status</th><th>Tender Awarded Value</th><th>Tenders Position (Sign/Tele)</th><th>Combined Stores Position</th><th>GeM Prov. (Veh/Manpower)</th><th>Allocation</th><th>A/c s Reference</th><th>Sanction No & Date</th><th>Physical Condition (% / Status)</th><th>Finance Status</th><th>Work Status</th><th>Remarks</th>
         </tr>`;
     }
 
-    // --- NEW: GLOBAL SEARCH LOGIC ---
     function executeSearch() {
       const query = document.getElementById('searchInput').value.trim();
       if(!query) return;
@@ -253,57 +266,48 @@
       buildTabsUI();
       setStatus('Searching Database...');
       
-      fetch(`${WEB_APP_URL}?action=search&query=${encodeURIComponent(query)}`)
-        .then(res => res.json())
+      safeFetch(`${WEB_APP_URL}?action=search&query=${encodeURIComponent(query)}`, "Running Global Search query")
         .then(data => {
           tableData = data;
           totalRowsCount = data.length;
           renderStandardHeaders();
-          rebuildTable(true); // true = forces read-only mode so users don't break cross-tab data
+          rebuildTable(true);
           setStatus(`Found ${data.length} matches`);
         });
     }
 
-    // --- NEW: EXPORT TO CSV / EXCEL ---
     function exportToCSV() {
       if(currentTab === 'Summary') return;
       setStatus('Preparing Excel Data...');
-      
       let targetUrl = isSearchMode ? false : `${WEB_APP_URL}?action=getAllData&tabName=${encodeURIComponent(currentTab)}`;
-      
-      // If we are in standard mode, fetch all rows. If in search mode, just export the tableData array.
       if (targetUrl) {
-        fetch(targetUrl).then(res => res.json()).then(data => generateCSV(data, currentTab));
+        safeFetch(targetUrl, "Downloading spreadsheet data").then(data => generateCSV(data, currentTab));
       } else {
         generateCSV(tableData, 'Search_Results');
       }
     }
 
     function generateCSV(data, filenamePrefix) {
-      let csvContent = "data:text/csv;charset=utf-8,";
-      csvContent += DB_HEADERS.join(",") + "\r\n"; // Header Row
-
+      let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // Prepend BOM for correct Excel encoding alignment
+      csvContent += DB_HEADERS.join(",") + "\r\n";
       data.forEach((row, idx) => {
-        let rowArr = [idx + 1]; // S.No
+        let rowArr = [idx + 1];
         for(let i=1; i<DB_HEADERS.length; i++){
           let val = row[DB_HEADERS[i]] || '';
-          val = val.toString().replace(/"/g, '""'); // Escape internal quotes for Excel
-          csvContent += `"${val}",`;
+          val = val.toString().replace(/"/g, '""'); 
+          rowArr.push(`"${val}"`);
         }
-        csvContent += "\r\n";
+        csvContent += rowArr.join(",") + "\r\n";
       });
-
       var encodedUri = encodeURI(csvContent);
       var link = document.createElement("a");
       link.setAttribute("href", encodedUri);
       link.setAttribute("download", `${filenamePrefix}_Export.csv`);
       document.body.appendChild(link);
-      link.click();
-      link.remove();
+      link.click(); link.remove();
       setStatus('✔ Export Complete'); setTimeout(() => setStatus(''), 2000);
     }
 
-    // --- CORE BATCHING & SAVING LOGIC ---
     function markRowModified(localIndex) {
       const row = tableData[localIndex];
       modifiedRows[row._absoluteIndex] = row; 
@@ -325,11 +329,10 @@
       setStatus('Saving to Cloud...');
       document.getElementById('saveBatchBtn').innerText = '⏳ Saving...';
       
-      fetch(WEB_APP_URL, {
+      safeFetch(WEB_APP_URL, "Committing batched data modifications", {
         method: "POST",
         body: JSON.stringify({ action: "saveBatch", tabName: currentTab, password: currentPassword, modifiedRows: modifiedRows })
-      }).then(res => res.json())
-        .then(response => {
+      }).then(response => {
           if (!response.success) { alert("Session expired or unauthorized."); toggleLogin(); } 
           else { 
             modifiedRows = {}; invalidateLocalCache(currentTab); updateSaveUI();
@@ -338,20 +341,16 @@
         });
     }
 
-    function invalidateLocalCache(tabName) {
-      for (let key in clientTabCache) { if (key.startsWith(tabName + '_')) delete clientTabCache[key]; }
-    }
-
     function loadPage(page, forceRefetch = false) {
-      if (isSearchMode) return; // Disable pagination during search
+      if (isSearchMode) return;
       if (Object.keys(modifiedRows).length > 0 && !forceRefetch && !confirm("You have unsaved changes! Discard them to change pages?")) return;
       
       modifiedRows = {}; updateSaveUI();
       currentPage = page;
 
       if (currentTab === 'Summary') {
-        setStatus('Fetching Dashboard...');
-        fetch(`${WEB_APP_URL}?action=getSummary`).then(res => res.json()).then(data => { renderSummaryDashboard(data); setStatus(''); });
+        setStatus('Fetching Dashboard Summary metrics...');
+        safeFetch(`${WEB_APP_URL}?action=getSummary`, "Loading Summary Portal").then(data => { renderSummaryDashboard(data); setStatus(''); });
         return;
       }
 
@@ -365,8 +364,7 @@
       }
       
       setStatus(`Fetching Page ${page}...`);
-      fetch(`${WEB_APP_URL}?action=getData&tabName=${encodeURIComponent(currentTab)}&page=${page}&limit=${ROWS_PER_PAGE}&isAdmin=${isAdmin}`)
-        .then(res => res.json())
+      safeFetch(`${WEB_APP_URL}?action=getData&tabName=${encodeURIComponent(currentTab)}&page=${page}&limit=${ROWS_PER_PAGE}&isAdmin=${isAdmin}`, "Loading grid entries")
         .then(response => {
           tableData = response.data;
           totalRowsCount = response.totalRows;
@@ -380,8 +378,8 @@
     function addRow() {
       if (!isAdmin || currentTab === 'Summary' || isSearchMode) return;
       setStatus('Adding row...');
-      fetch(WEB_APP_URL, { method: "POST", body: JSON.stringify({ action: "addRow", tabName: currentTab, password: currentPassword }) })
-        .then(res => res.json()).then(response => {
+      safeFetch(WEB_APP_URL, "Appending new empty entry instance row", { method: "POST", body: JSON.stringify({ action: "addRow", tabName: currentTab, password: currentPassword }) })
+        .then(response => {
           if (response.success) {
             totalRowsCount = response.newTotalRows; invalidateLocalCache(currentTab);
             loadPage(Math.ceil(totalRowsCount / ROWS_PER_PAGE) || 1, true);
@@ -394,26 +392,24 @@
       if (!isAdmin || isSearchMode) return;
       if (confirm(`PERMANENTLY DELETE Row ${absoluteIndex + 1} from Tab ${currentTab}?`)) {
         setStatus('Deleting Row...');
-        fetch(WEB_APP_URL, { method: "POST", body: JSON.stringify({ action: "deleteRow", tabName: currentTab, password: currentPassword, rowIndex: absoluteIndex }) })
-          .then(res => res.json()).then(response => {
+        safeFetch(WEB_APP_URL, "Deleting targeted active row indexes", { method: "POST", body: JSON.stringify({ action: "deleteRow", tabName: currentTab, password: currentPassword, rowIndex: absoluteIndex }) })
+          .then(response => {
             if (response.success) { invalidateLocalCache(currentTab); loadPage(currentPage, true); setStatus('✔ Row Deleted'); setTimeout(() => setStatus(''), 2000); } 
             else { alert("Error: " + response.error); setStatus(''); }
           });
       }
     };
 
-    // --- BUG FIX INSTALLED IN DELETE FILE LOGIC ---
     window.deleteFileLink = function(localIndex, key) {
       if(!isAdmin || isSearchMode) return;
       if(confirm(`Remove this file link permanently?`)) { 
         delete tableData[localIndex][key]; 
         markRowModified(localIndex); 
-        commitBatchedChanges(); // Auto-commits instantly to prevent ghost links upon logout
+        commitBatchedChanges(); 
         rebuildTable(); 
       }
     }
 
-    // --- UI RENDERING ENGINES ---
     function createCompoundCell(row, localIndex, prefix, readOnly) {
       let td = document.createElement('td');
       let container = document.createElement('div'); container.className = 'compound-cell';
@@ -475,9 +471,7 @@
       tableData.forEach((row, localIndex) => {
         let absIndex = row._absoluteIndex; const tr = document.createElement('tr');
         let tdSno = document.createElement('td');
-        
         let label = readOnly ? `[${row._tabName}]<br>#${absIndex + 1}` : (absIndex + 1);
-
         if (isAdmin && !readOnly) { tdSno.innerHTML = `<div class="sno-cell"><span>${label}</span><button class="icon-btn" onclick="removeRow(${absIndex})" title="Delete Row">🗑️</button></div>`; } 
         else { tdSno.innerHTML = label; }
         tr.appendChild(tdSno);
@@ -541,7 +535,6 @@
         tr.appendChild(createStandardCell(row, localIndex, 'Remarks', 'txt-work', 'Notes...', readOnly));
         tbody.appendChild(tr);
       });
-      
       if(!readOnly) {
         const totalPages = Math.ceil(totalRowsCount / ROWS_PER_PAGE) || 1;
         document.getElementById('pageInfo').innerText = `Page ${currentPage} of ${totalPages}`;
@@ -555,11 +548,10 @@
       const file = this.files[0]; const reader = new FileReader(); const meta = currentUploadMeta;
       setStatus('⏳ Uploading document to Drive...');
       reader.onload = function(event) {
-        fetch(WEB_APP_URL, {
+        safeFetch(WEB_APP_URL, "Uploading binary file to Drive storage pipeline", {
           method: "POST",
           body: JSON.stringify({ action: "uploadFile", base64Data: event.target.result, fileName: file.name })
-        }).then(res => res.json())
-          .then(response => {
+        }).then(response => {
             if (response.error) { alert("Upload error: " + response.error); setStatus('❌ Failed'); } 
             else { setStatus('✔ Uploaded (Unsaved)'); tableData[meta.index][meta.key] = response.url; markRowModified(meta.index); rebuildTable(); }
           });
