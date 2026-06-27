@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>SC Division S&T proposals and works management portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 15px; background-color: #f4f4f9; margin: 0; font-size: 11px; display: flex; flex-direction: column; min-height: 95vh;}
+    .header-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;}
+    h2 { margin: 0; color: #333; font-size: 16px; }
+    .status-text { color: #d93025; font-size: 12px; margin-left: 10px; font-weight: bold; }
+    
+    .tabs-container { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 10px; border-bottom: 2px solid #ccc; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+    .tab-button { padding: 6px 14px; background: #e0e0e0; border: 1px solid #ccc; border-bottom: none; border-radius: 4px 4px 0 0; cursor: pointer; font-weight: bold; font-size: 11px; color: #555; transition: all 0.2s; }
+    .tab-button:hover { background: #d5d5d5; }
+    .tab-button.active { background: #4285F4; color: white; border-color: #4285F4; }
+
+    .table-wrapper { width: 100%; overflow-x: auto; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-radius: 6px; flex: 1;}
+    table { border-collapse: collapse; width: max-content; min-width: 100%; }
+    th, td { border: 1px solid #e0e0e0; padding: 6px 8px; text-align: center; vertical-align: middle; font-size: 11px; }
+    th { background-color: #4285F4; color: white; font-weight: bold; white-space: nowrap; position: sticky; top: 0; z-index: 10;}
+    
+    input[type="text"], input[type="date"] { padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; font-size: 11px; box-sizing: border-box; }
+    input:disabled { background-color: #f8f9fa; cursor: not-allowed; border: 1px dashed #ccc; color: #555; }
+    
+    .txt-work { width: 220px; white-space: normal !important; word-wrap: break-word; }
+    .txt-short { width: 90px; }
+    .txt-num { width: 80px; }
+    
+    .compound-cell { display: flex; flex-direction: column; gap: 4px; text-align: left; min-width: 150px; }
+    .compound-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+    .compound-row span { font-size: 10px; color: #666; font-weight: bold; }
+    
+    .top-btn { padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; font-size: 12px; }
+    .btn-admin { background: #333; color: white; }
+    .btn-add { background: #4285F4; color: white; }
+    .btn-save { background: #34A853; color: white; animation: pulse 2s infinite;}
+
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(52, 168, 83, 0.7); } 70% { box-shadow: 0 0 0 6px rgba(52, 168, 83, 0); } 100% { box-shadow: 0 0 0 0 rgba(52, 168, 83, 0); } }
+
+    .icon-btn { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; margin: 0 1px; border-radius: 3px; }
+    .icon-btn:hover { background: #eee; }
+    .icon-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+    
+    .sno-cell { display: flex; justify-content: space-between; align-items: center; gap: 6px; min-width: 45px;}
+    .pagination { display: flex; justify-content: center; align-items: center; padding: 15px 0; gap: 15px; font-weight: bold; color: #555;}
+    .page-btn { padding: 5px 12px; background: #ddd; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;}
+    .page-btn:hover { background: #ccc; }
+    .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .footer-credit { text-align: right; margin-top: auto; padding: 15px 5px 5px 0; font-size: 12px; color: #444; font-weight: bold; font-style: italic; border-top: 1px solid #ddd; }
+  </style>
+</head>
+<body>
+
+  <div class="header-container">
+    <div>
+      <h2>SC Division S&T proposals and works management portal <span id="syncStatus" class="status-text"></span></h2>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button id="loginBtn" class="top-btn btn-admin" onclick="toggleLogin()">🔒 Admin Login</button>
+      <span id="adminControls" style="display:none; gap: 8px;">
+        <button id="saveBatchBtn" class="top-btn btn-save" style="display:none;" onclick="commitBatchedChanges()">💾 Save Changes (0)</button>
+        <button class="top-btn btn-add" onclick="addRow()">➕ Add Row</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="tabs-container" id="tabsBar"></div>
+
+  <div class="table-wrapper">
+    <table id="mainTable">
+      <thead>
+        <tr>
+          <th>Sl. No</th>
+          <th style="width: 220px;">Name of the Work</th>
+          <th>Status</th>
+          <th>AE Submission & Estimates</th>
+          <th>DE Submission & Estimates</th>
+          <th>Schedule Submission & Estimates</th>
+          <th>IRPSM NO.</th>
+          <th>Sanctioned Amt (Sign/Tele)</th>
+          <th>RCIL Provision</th>
+          <th>ENGG Provision</th>
+          <th>ELEC /M Provision</th>
+          <th>ELEC /TRD Provision</th>
+          <th>Schedule Amount</th>
+          <th>Contingency</th>
+          <th>D&G Prov. / Status</th>
+          <th>Tender Awarded Value</th>
+          <th>Tenders Position (Sign/Tele)</th>
+          <th>Combined Stores Position</th>
+          <th>GeM Prov. (Veh/Manpower)</th>
+          <th>Allocation</th>
+          <th>A/c s Reference</th>
+          <th>Sanction No & Date</th>
+          <th>Physical Condition (% / Status)</th>
+          <th>Finance Status</th>
+          <th>Work Status</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr><td colspan="26">Loading database matrix... please wait.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pagination">
+    <button class="page-btn" id="prevBtn" onclick="changePage(-1)">◀ Previous</button>
+    <span id="pageInfo">Page 1 of 1</span>
+    <button class="page-btn" id="nextBtn" onclick="changePage(1)">Next ▶</button>
+  </div>
+  <div class="footer-credit">Created by Ch. Saikiran, IRSSE, IITM</div>
+
+  <input type="file" id="globalFileInput" style="display:none;">
+
+  <script>
+    // --- CONNECT FRONTEND TO APPS SCRIPT API ---
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyVkoQfOEj98QVrEkKomhZZkrWw4eciVvqRRhl3nNCwCSIqe_8SdfP9kW9VmwrXOorX/exec";
+
+    const tabsList = ["1500", "1600", "1700", "2900", "3300", "3000", "3100", "3200", "4200", "5300", "6400", "Deposit work", "Other works"];
+    let currentTab = tabsList[0];
+
+    let clientTabCache = {}; 
+    let tableData = []; 
+    let totalRowsCount = 0;
+    let modifiedRows = {}; 
+
+    let isAdmin = false;
+    let currentPassword = "";
+
+    let currentPage = 1;
+    const ROWS_PER_PAGE = 25; 
+    let currentUploadMeta = null;
+
+    window.onload = function() { buildTabsUI(); loadPage(1); };
+
+    function buildTabsUI() {
+      const container = document.getElementById('tabsBar');
+      container.innerHTML = '';
+      tabsList.forEach(tab => {
+        let btn = document.createElement('button');
+        btn.className = `tab-button ${tab === currentTab ? 'active' : ''}`;
+        btn.innerText = tab;
+        btn.onclick = () => switchTab(tab);
+        container.appendChild(btn);
+      });
+    }
+
+    function invalidateLocalCache(tabName) {
+      for (let key in clientTabCache) {
+        if (key.startsWith(tabName + '_')) delete clientTabCache[key];
+      }
+    }
+
+    function switchTab(tabName) {
+      if(currentTab === tabName) return;
+      if (Object.keys(modifiedRows).length > 0 && !confirm("You have unsaved changes! Discard them and switch tabs?")) return;
+      currentTab = tabName;
+      buildTabsUI();
+      loadPage(1);
+    }
+
+    function toggleLogin() {
+      if (isAdmin) {
+        if (Object.keys(modifiedRows).length > 0 && !confirm("Discard unsaved changes?")) return;
+        isAdmin = false; currentPassword = "";
+        document.getElementById('loginBtn').innerText = "🔒 Admin Login";
+        document.getElementById('adminControls').style.display = "none";
+        modifiedRows = {}; clientTabCache = {}; 
+        updateSaveUI();
+        loadPage(currentPage, true);
+        setStatus('Logged out'); setTimeout(() => setStatus(''), 2000);
+      } else {
+        const pwd = prompt("Enter Admin Password:");
+        if (!pwd) return;
+        setStatus('Verifying...');
+        fetch(`${WEB_APP_URL}?action=verifyAdmin&password=${encodeURIComponent(pwd)}`)
+          .then(res => res.json())
+          .then(res => {
+            if (res.isValid) {
+              isAdmin = true; currentPassword = pwd;
+              document.getElementById('loginBtn').innerText = "🔓 Logout";
+              document.getElementById('adminControls').style.display = "inline-flex";
+              clientTabCache = {}; 
+              loadPage(currentPage, true); 
+              setStatus('✔ Admin verified'); setTimeout(() => setStatus(''), 2000);
+            } else { alert("Incorrect password!"); setStatus(''); }
+          }).catch(() => { alert("Network Connection Error"); setStatus(''); });
+      }
+    }
+
+    function setStatus(msg) { document.getElementById('syncStatus').innerText = msg; }
+
+    function markRowModified(localIndex) {
+      const row = tableData[localIndex];
+      modifiedRows[row._absoluteIndex] = row; 
+      updateSaveUI();
+    }
+
+    function updateSaveUI() {
+      const btn = document.getElementById('saveBatchBtn');
+      const count = Object.keys(modifiedRows).length;
+      btn.style.display = count > 0 ? 'inline-block' : 'none';
+      btn.innerText = `💾 Save Changes (${count})`;
+    }
+
+    function commitBatchedChanges() {
+      if (!isAdmin) return;
+      const count = Object.keys(modifiedRows).length;
+      if(count === 0) return;
+
+      setStatus('Saving to Cloud...');
+      document.getElementById('saveBatchBtn').innerText = '⏳ Saving...';
+      
+      fetch(WEB_APP_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "saveBatch", tabName: currentTab, password: currentPassword, modifiedRows: modifiedRows })
+      }).then(res => res.json())
+        .then(response => {
+          if (!response.success) { alert("Session expired or unauthorized."); toggleLogin(); } 
+          else { 
+            modifiedRows = {}; invalidateLocalCache(currentTab); updateSaveUI();
+            setStatus('✔ Saved'); setTimeout(() => setStatus(''), 2000); 
+          }
+        });
+    }
+
+    function loadPage(page, forceRefetch = false) {
+      if (Object.keys(modifiedRows).length > 0 && !forceRefetch && !confirm("You have unsaved changes! Discard them to change pages?")) return;
+      modifiedRows = {}; updateSaveUI();
+      currentPage = page;
+      const cacheKey = currentTab + '_P' + page;
+
+      if (!forceRefetch && clientTabCache[cacheKey]) {
+        tableData = clientTabCache[cacheKey].data;
+        totalRowsCount = clientTabCache[cacheKey].totalRows;
+        rebuildTable(); return;
+      }
+      
+      setStatus(`Fetching Page ${page}...`);
+      fetch(`${WEB_APP_URL}?action=getData&tabName=${encodeURIComponent(currentTab)}&page=${page}&limit=${ROWS_PER_PAGE}&isAdmin=${isAdmin}`)
+        .then(res => res.json())
+        .then(response => {
+          tableData = response.data;
+          totalRowsCount = response.totalRows;
+          clientTabCache[cacheKey] = { data: response.data, totalRows: response.totalRows };
+          setStatus(''); rebuildTable(); 
+        });
+    }
+
+    function changePage(dir) { loadPage(currentPage + dir); }
+
+    function addRow() {
+      if (!isAdmin) return;
+      setStatus('Adding row...');
+      fetch(WEB_APP_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "addRow", tabName: currentTab, password: currentPassword })
+      }).then(res => res.json())
+        .then(response => {
+          if (response.success) {
+            totalRowsCount = response.newTotalRows; invalidateLocalCache(currentTab);
+            loadPage(Math.ceil(totalRowsCount / ROWS_PER_PAGE) || 1, true);
+            setStatus('✔ Row Added'); setTimeout(() => setStatus(''), 2000);
+          }
+        });
+    }
+    
+    window.removeRow = function(absoluteIndex) {
+      if (!isAdmin) return;
+      if (confirm(`PERMANENTLY DELETE Row ${absoluteIndex + 1} from Tab ${currentTab}?`)) {
+        setStatus('Deleting Row...');
+        fetch(WEB_APP_URL, {
+          method: "POST",
+          body: JSON.stringify({ action: "deleteRow", tabName: currentTab, password: currentPassword, rowIndex: absoluteIndex })
+        }).then(res => res.json())
+          .then(response => {
+            if (response.success) { invalidateLocalCache(currentTab); loadPage(currentPage, true); setStatus('✔ Row Deleted'); setTimeout(() => setStatus(''), 2000); } 
+            else { alert("Error: " + response.error); setStatus(''); }
+          });
+      }
+    };
+
+    function createCompoundCell(row, localIndex, prefix) {
+      let td = document.createElement('td');
+      let container = document.createElement('div'); container.className = 'compound-cell';
+      let dateInput = document.createElement('input'); dateInput.type = 'date';
+      if(row[prefix + ' Date']) dateInput.value = new Date(row[prefix + ' Date']).toISOString().substring(0, 10);
+      dateInput.disabled = !isAdmin;
+      dateInput.onchange = (e) => { tableData[localIndex][prefix + ' Date'] = e.target.value; markRowModified(localIndex); };
+      container.appendChild(dateInput);
+
+      ['Signal', 'Tele'].forEach(type => {
+        let div = document.createElement('div'); div.className = 'compound-row';
+        div.innerHTML = `<span>Cost ${type.substring(0,4)}:</span>`;
+        let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.placeholder = 'Amt...';
+        inp.value = row[prefix + ' Cost ' + type] || ''; inp.disabled = !isAdmin;
+        inp.onchange = (e) => { tableData[localIndex][prefix + ' Cost ' + type] = e.target.value; markRowModified(localIndex); };
+        div.appendChild(inp); container.appendChild(div);
+      });
+
+      let fileRow = document.createElement('div'); fileRow.className = 'compound-row';
+      fileRow.innerHTML = `<span>Est Docs:</span><div></div>`;
+      let fileBtnGroup = fileRow.querySelector('div');
+
+      ['Signal', 'Tele'].forEach(type => {
+        let fileKey = prefix + ' File ' + type;
+        if (row[fileKey]) {
+          fileBtnGroup.innerHTML += `<button class="icon-btn" onclick="window.open('${row[fileKey]}', '_blank')" title="Download">📥${type.substring(0,1)}</button>`;
+          if(isAdmin) {
+            fileBtnGroup.innerHTML += `<button class="icon-btn" onclick="triggerFilePicker(${localIndex}, '${fileKey}')" title="Replace">🔄</button>`;
+            fileBtnGroup.innerHTML += `<button class="icon-btn" onclick="deleteFileLink(${localIndex}, '${fileKey}')" title="Delete">❌</button>`;
+          }
+        } else if (isAdmin) {
+          fileBtnGroup.innerHTML += `<button class="icon-btn" onclick="triggerFilePicker(${localIndex}, '${fileKey}')" title="Upload">📤${type.substring(0,1)}</button>`;
+        } else { fileBtnGroup.innerHTML += `<span style="color:#ccc;margin-right:4px;">➖</span>`; }
+      });
+      container.appendChild(fileRow); td.appendChild(container); return td;
+    }
+
+    window.deleteFileLink = function(localIndex, key) {
+      if(!isAdmin) return;
+      if(confirm(`Remove this file link?`)) { delete tableData[localIndex][key]; markRowModified(localIndex); rebuildTable(); }
+    }
+
+    window.triggerFilePicker = function(localIndex, fileKey) {
+      if (!isAdmin) return; 
+      currentUploadMeta = { index: localIndex, key: fileKey };
+      const fileInput = document.getElementById('globalFileInput');
+      fileInput.value = ''; fileInput.click();
+    };
+
+    function createStandardCell(row, localIndex, key, className, placeholder) {
+      let td = document.createElement('td');
+      let inp = document.createElement('input'); inp.type = 'text'; inp.className = className; inp.placeholder = placeholder;
+      inp.value = row[key] || ''; inp.disabled = !isAdmin;
+      inp.onchange = (e) => { tableData[localIndex][key] = e.target.value; markRowModified(localIndex); };
+      td.appendChild(inp); return td;
+    }
+
+    function rebuildTable() {
+      const tbody = document.getElementById('tableBody'); tbody.innerHTML = ''; 
+      if (tableData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="26" style="color:#999;padding:20px;">No records found in Tab [${currentTab}]. Click Add Row to get started.</td></tr>`;
+        return;
+      }
+      tableData.forEach((row, localIndex) => {
+        let absIndex = row._absoluteIndex; const tr = document.createElement('tr');
+        let tdSno = document.createElement('td');
+        if (isAdmin) { tdSno.innerHTML = `<div class="sno-cell"><span>${absIndex + 1}</span><button class="icon-btn" onclick="removeRow(${absIndex})" title="Delete Row">🗑️</button></div>`; } 
+        else { tdSno.innerText = absIndex + 1; }
+        tr.appendChild(tdSno);
+
+        tr.appendChild(createStandardCell(row, localIndex, 'Name of the Work', 'txt-work', 'Describe details...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'Status', 'txt-short', 'Status...'));
+        tr.appendChild(createCompoundCell(row, localIndex, 'AE'));
+        tr.appendChild(createCompoundCell(row, localIndex, 'DE'));
+        tr.appendChild(createCompoundCell(row, localIndex, 'Schedule'));
+        tr.appendChild(createStandardCell(row, localIndex, 'IRPSM NO', 'txt-short', 'IRPSM...'));
+        
+        let tdSanc = document.createElement('td'); let divSanc = document.createElement('div'); divSanc.className = 'compound-cell';
+        ['Signal', 'Tele'].forEach(type => {
+          let div = document.createElement('div'); div.className = 'compound-row'; div.innerHTML = `<span>${type.substring(0,4)}:</span>`;
+          let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.value = row['Sanctioned Amount ' + type] || ''; inp.disabled = !isAdmin;
+          inp.onchange = (e) => { tableData[localIndex]['Sanctioned Amount ' + type] = e.target.value; markRowModified(localIndex); };
+          div.appendChild(inp); divSanc.appendChild(div);
+        });
+        tdSanc.appendChild(divSanc); tr.appendChild(tdSanc);
+
+        tr.appendChild(createStandardCell(row, localIndex, 'RCIL Provision', 'txt-short', 'RCIL...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'ENGG Provision', 'txt-short', 'ENGG...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'ELEC M Provision', 'txt-short', 'ELEC/M...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'ELEC TRD Provision', 'txt-short', 'ELEC/TRD...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'Schedule Amount', 'txt-short', 'Amount...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'Contingency', 'txt-short', 'Contingency...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'DG Provision Status', 'txt-short', 'D&G Status...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'Tender Awarded Value', 'txt-short', 'Award value...'));
+
+        let tdTend = document.createElement('td'); let divTend = document.createElement('div'); divTend.className = 'compound-cell';
+        ['Signal', 'Tele'].forEach(type => {
+          let div = document.createElement('div'); div.className = 'compound-row'; div.innerHTML = `<span>${type.substring(0,4)}:</span>`;
+          let inp = document.createElement('input'); inp.type = 'text'; inp.className = 'txt-num'; inp.value = row['Tenders Position ' + type] || ''; inp.disabled = !isAdmin;
+          inp.onchange = (e) => { tableData[localIndex]['Tenders Position ' + type] = e.target.value; markRowModified(localIndex); };
+          div.appendChild(inp); divTend.appendChild(div);
+        });
+        tdTend.appendChild(divTend); tr.appendChild(tdTend);
+
+        tr.appendChild(createStandardCell(row, localIndex, 'Combined Stores Position Status', 'txt-work', 'Cables, LED, LC gate etc...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'GeM Provision Status', 'txt-work', 'Vehicle, manpower...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'Allocation', 'txt-short', 'Allocation...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'Acs Reference', 'txt-short', 'A/c Ref...'));
+
+        let tdSancND = document.createElement('td'); let divSancND = document.createElement('div'); divSancND.className = 'compound-cell';
+        let sNoInp = document.createElement('input'); sNoInp.type='text'; sNoInp.placeholder='No...'; sNoInp.value = row['Sanction No'] || ''; sNoInp.disabled = !isAdmin;
+        sNoInp.onchange = (e) => { tableData[localIndex]['Sanction No'] = e.target.value; markRowModified(localIndex); };
+        let sDtInp = document.createElement('input'); sDtInp.type='date'; sDtInp.disabled = !isAdmin;
+        if(row['Sanction Date']) sDtInp.value = new Date(row['Sanction Date']).toISOString().substring(0, 10);
+        sDtInp.onchange = (e) => { tableData[localIndex]['Sanction Date'] = e.target.value; markRowModified(localIndex); };
+        divSancND.appendChild(sNoInp); divSancND.appendChild(sDtInp); tdSancND.appendChild(divSancND); tr.appendChild(tdSancND);
+
+        let tdPhys = document.createElement('td'); let divPhys = document.createElement('div'); divPhys.className = 'compound-cell';
+        let pPct = document.createElement('input'); pPct.type='text'; pPct.placeholder='%...'; pPct.value = row['Physical Condition Percent'] || ''; pPct.disabled = !isAdmin;
+        pPct.onchange = (e) => { tableData[localIndex]['Physical Condition Percent'] = e.target.value; markRowModified(localIndex); };
+        let pSts = document.createElement('input'); pSts.type='text'; pSts.placeholder='Status...'; pSts.value = row['Physical Condition Status'] || ''; pSts.disabled = !isAdmin;
+        pSts.onchange = (e) => { tableData[localIndex]['Physical Condition Status'] = e.target.value; markRowModified(localIndex); };
+        divPhys.appendChild(pPct); divPhys.appendChild(pSts); tdPhys.appendChild(divPhys); tr.appendChild(tdPhys);
+
+        tr.appendChild(createStandardCell(row, localIndex, 'Finance Status', 'txt-short', 'Finance...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'Work Status', 'txt-short', 'Open/Close/Dropped...'));
+        tr.appendChild(createStandardCell(row, localIndex, 'Remarks', 'txt-work', 'Notes...'));
+        tbody.appendChild(tr);
+      });
+      const totalPages = Math.ceil(totalRowsCount / ROWS_PER_PAGE) || 1;
+      document.getElementById('pageInfo').innerText = `Page ${currentPage} of ${totalPages}`;
+      document.getElementById('prevBtn').disabled = currentPage === 1;
+      document.getElementById('nextBtn').disabled = currentPage === totalPages;
+    }
+
+    document.getElementById('globalFileInput').addEventListener('change', function(e) {
+      if (this.files.length === 0 || !currentUploadMeta) return;
+      const file = this.files[0]; const reader = new FileReader(); const meta = currentUploadMeta;
+      setStatus('⏳ Uploading document to Drive...');
+      reader.onload = function(event) {
+        fetch(WEB_APP_URL, {
+          method: "POST",
+          body: JSON.stringify({ action: "uploadFile", base64Data: event.target.result, fileName: file.name })
+        }).then(res => res.json())
+          .then(response => {
+            if (response.error) { alert("Upload error: " + response.error); setStatus('❌ Failed'); } 
+            else { setStatus('✔ Uploaded (Unsaved)'); tableData[meta.index][meta.key] = response.url; markRowModified(meta.index); rebuildTable(); }
+          });
+      }; reader.readAsDataURL(file);
+    });
+  </script>
+</body>
+</html>
